@@ -1,0 +1,718 @@
+---
+import type { CollectionEntry } from 'astro:content'
+
+import { Icon } from 'astro-pure/user'
+import { localizePath } from '@/utils/languages'
+import { getReadingEntry, getReadingStats, isPaperNote } from '@/utils/paper-reading'
+
+import { readingDepths, researchTopics } from '../../paper-reading.config'
+
+interface Props {
+  language: string
+  posts: CollectionEntry<'blog'>[]
+}
+const { language, posts } = Astro.props
+const isChinese = language.toLowerCase().startsWith('zh')
+const notes = posts
+  .filter(isPaperNote)
+  .sort(
+    (first, second) =>
+      (second.data.updatedDate ?? second.data.publishDate).valueOf() -
+      (first.data.updatedDate ?? first.data.publishDate).valueOf()
+  )
+const entries = notes.map(getReadingEntry)
+const stats = getReadingStats(notes)
+const topics = researchTopics
+  .map((topic) => ({
+    ...topic,
+    count: notes.filter(({ data }) => data.researchTopics.includes(topic.slug)).length
+  }))
+  .filter(({ count }) => count > 0)
+const unclassified = notes.filter(({ data }) => data.researchTopics.length === 0).length
+const years = [...new Set(entries.map(({ year }) => year).filter((year) => year !== 'unknown'))]
+  .sort()
+  .reverse()
+const href = (path: string) => localizePath(path, language)
+const copy = isChinese
+  ? {
+      back: '← 返回博客',
+      eyebrow: '公开笔记 / 论文阅读',
+      title: '论文阅读',
+      intro: '把读过的论文、理解的过程与仍然开放的问题，慢慢整理在一起。',
+      notes: '阅读笔记',
+      papers: '已关联论文',
+      topics: '研究方向',
+      updated: '最近更新',
+      search: '查询阅读笔记',
+      placeholder: '论文标题、作者、关键词，或笔记中的一个概念…',
+      hint: '标题、标签与笔记全文；只搜索论文阅读内容。',
+      topic: '研究方向',
+      all: '全部',
+      year: '论文年份',
+      allYears: '全部年份',
+      unknownYear: '年份未标注',
+      depth: '阅读进度',
+      allDepths: '全部进度',
+      sort: '排序方式',
+      updatedSort: '最近更新',
+      publishedSort: '最近发布',
+      yearSort: '论文年份',
+      clear: '重置筛选',
+      unclassified: '待分类',
+      index: '阅读索引',
+      count: `共 ${notes.length} 篇笔记`,
+      original: '原论文',
+      empty: '暂时没有匹配的笔记。',
+      emptyHint: '试试更短的关键词，或清除部分筛选条件。',
+      prev: '← 上一页',
+      next: '下一页 →',
+      collections: '沿着专题继续阅读 →',
+      footnote: '笔记与论文分别统计；同一论文的多篇笔记不会重复计入论文数。',
+      noScript: '启用 JavaScript 后可以查询、筛选与翻页；所有已发布笔记仍可直接阅读。'
+    }
+  : {
+      back: '← Back to blog',
+      eyebrow: 'Public notebook / paper reading',
+      title: 'Paper reading',
+      intro: 'A growing index of papers, working understanding, and questions worth keeping open.',
+      notes: 'Reading notes',
+      papers: 'Linked papers',
+      topics: 'Research topics',
+      updated: 'Last updated',
+      search: 'Search reading notes',
+      placeholder: 'A paper, an author, a keyword, or a concept in a note…',
+      hint: 'Titles, tags, and full text. Only paper reading notes are searched.',
+      topic: 'Research topics',
+      all: 'All',
+      year: 'Paper year',
+      allYears: 'All years',
+      unknownYear: 'Year not marked',
+      depth: 'Reading depth',
+      allDepths: 'All depths',
+      sort: 'Sort by',
+      updatedSort: 'Recently updated',
+      publishedSort: 'Recently published',
+      yearSort: 'Paper year',
+      clear: 'Reset filters',
+      unclassified: 'Unclassified',
+      index: 'Reading index',
+      count: `${notes.length} notes`,
+      original: 'Source paper',
+      empty: 'No matching notes yet.',
+      emptyHint: 'Try a shorter query or clear a filter.',
+      prev: '← Previous',
+      next: 'Next →',
+      collections: 'Follow a collection →',
+      footnote:
+        'Notes and papers are counted separately. Multiple notes on one paper count as one linked paper.',
+      noScript:
+        'Enable JavaScript to search, filter, and paginate. All published notes remain readable below.'
+    }
+---
+
+<main class='page-column reading-center' data-pagefind-ignore>
+  <a class='reading-back' href={href('/blog')}>{copy.back}</a>
+  <header class='reading-heading'>
+    <p class='eyebrow'>{copy.eyebrow}</p>
+    <h1>{copy.title}<span>.</span></h1>
+    <p class='reading-intro'>{copy.intro}</p>
+  </header>
+  <dl class='reading-stats'>
+    <div><dt>{copy.notes}</dt><dd>{stats.noteCount.toString().padStart(2, '0')}</dd></div>
+    <div><dt>{copy.papers}</dt><dd>{stats.paperCount.toString().padStart(2, '0')}</dd></div>
+    <div><dt>{copy.topics}</dt><dd>{topics.length.toString().padStart(2, '0')}</dd></div>
+    <div>
+      <dt>{copy.updated}</dt><dd class='reading-stat-date'>
+        {stats.updated?.toISOString().slice(0, 10) ?? '—'}
+      </dd>
+    </div>
+  </dl>
+
+  <paper-library
+    data-language={language}
+    data-records={JSON.stringify(entries)}
+    data-dev={import.meta.env.DEV ? '' : undefined}
+  >
+    <section class='reading-tools' aria-label={copy.search} data-interactive hidden>
+      <label class='search-label' for='paper-query'>{copy.search}</label>
+      <div class='reading-search'>
+        <Icon name='search' class='size-4' />
+        <input
+          id='paper-query'
+          name='q'
+          type='search'
+          placeholder={copy.placeholder}
+          maxlength='300'
+          autocomplete='off'
+          aria-describedby='paper-search-hint'
+        />
+        <kbd aria-hidden='true'>/</kbd>
+      </div>
+      <p id='paper-search-hint' class='search-hint'>{copy.hint}</p>
+      <div class='topic-filter' role='group' aria-label={copy.topic}>
+        <span class='filter-caption'>{copy.topic}</span>
+        <button type='button' data-topic='' aria-pressed='true'
+          >{copy.all} <span>{notes.length}</span></button
+        >
+        {
+          topics.map((topic) => (
+            <button type='button' data-topic={topic.slug} aria-pressed='false'>
+              {isChinese ? topic.labelZh : topic.label} <span>{topic.count}</span>
+            </button>
+          ))
+        }
+        {
+          unclassified > 0 && (
+            <button type='button' data-topic='unclassified' aria-pressed='false'>
+              {copy.unclassified} <span>{unclassified}</span>
+            </button>
+          )
+        }
+      </div>
+      <div class='reading-selects'>
+        <label
+          >{copy.year}<select name='year' aria-label={copy.year}
+            ><option value=''>{copy.allYears}</option>{
+              years.map((year) => <option value={year}>{year}</option>)
+            }{
+              entries.some(({ year }) => year === 'unknown') && (
+                <option value='unknown'>{copy.unknownYear}</option>
+              )
+            }</select
+          ></label
+        >
+        <label
+          >{copy.depth}<select name='depth' aria-label={copy.depth}
+            ><option value=''>{copy.allDepths}</option>{
+              Object.entries(readingDepths).map(([value, labels]) => (
+                <option value={value}>{isChinese ? labels.labelZh : labels.label}</option>
+              ))
+            }</select
+          ></label
+        >
+        <label
+          >{copy.sort}<select name='sort' aria-label={copy.sort}
+            ><option value='updated'>{copy.updatedSort}</option><option value='published'
+              >{copy.publishedSort}</option
+            ><option value='year'>{copy.yearSort}</option></select
+          ></label
+        >
+        <button class='reset-filters' type='button' data-reset>{copy.clear} ↺</button>
+      </div>
+    </section>
+    <noscript><p class='search-hint'>{copy.noScript}</p></noscript>
+    <p class='search-feedback' data-search-status role='status' hidden></p>
+    <div class='reading-results-heading'>
+      <h2>{copy.index}</h2><p data-summary aria-live='polite' aria-atomic='true'>{copy.count}</p>
+    </div>
+    <ul class='reading-list' aria-label={copy.index}>
+      {
+        notes.map((post, index) => {
+          const { data, id } = post
+          const paper = data.paper
+          const source =
+            paper?.url ??
+            (paper?.doi
+              ? `https://doi.org/${paper.doi}`
+              : paper?.arxivId
+                ? `https://arxiv.org/abs/${paper.arxivId}`
+                : undefined)
+          return (
+            <li class='paper-row' data-note-id={id}>
+              <span class='paper-number' aria-hidden='true'>
+                {(index + 1).toString().padStart(2, '0')}
+              </span>
+              <div class='paper-main'>
+                <div class='paper-row-meta'>
+                  <>
+                    <time datetime={(data.updatedDate ?? data.publishDate).toISOString()}>
+                      {(data.updatedDate ?? data.publishDate).toISOString().slice(0, 10)}
+                    </time>
+                    <span>
+                      {isChinese
+                        ? readingDepths[data.readingDepth ?? 'unmarked'].labelZh
+                        : readingDepths[data.readingDepth ?? 'unmarked'].label}
+                    </span>
+                  </>
+                </div>
+                <a class='paper-note-link' href={href(`/blog/${id}`)}>
+                  <h3>{data.title}</h3>
+                </a>
+                {paper && (
+                  <p class='source-title' lang='en'>
+                    {paper.title}
+                  </p>
+                )}
+                <p class='paper-description'>{data.description}</p>
+                <p class='paper-excerpt' data-excerpt hidden />
+                <div class='paper-taxonomy'>
+                  {data.researchTopics.map((slug) => {
+                    const topic = researchTopics.find((topic) => topic.slug === slug)
+                    return (
+                      <a href={`${href('/blog/paper-reading')}?topic=${encodeURIComponent(slug)}`}>
+                        {isChinese ? topic?.labelZh : topic?.label}
+                      </a>
+                    )
+                  })}
+                  {paper?.year && <span>{paper.year}</span>}
+                  {paper?.venue && <span>{paper.venue}</span>}
+                  {source && (
+                    <a class='source-link' href={source} target='_blank' rel='noreferrer'>
+                      {copy.original} ↗
+                    </a>
+                  )}
+                </div>
+                {data.tags.length > 0 && (
+                  <div class='paper-keywords'>
+                    {data.tags.map((tag) => (
+                      <a href={`${href('/blog/paper-reading')}?q=${encodeURIComponent(tag)}`}>
+                        {tag}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <a
+                class='paper-arrow'
+                href={href(`/blog/${id}`)}
+                aria-label={`${isChinese ? '阅读' : 'Read'} ${data.title}`}
+              >
+                ↗
+              </a>
+            </li>
+          )
+        })
+      }
+    </ul>
+    <div class='reading-empty' data-empty hidden>
+      <p>{copy.empty}</p><span>{copy.emptyHint}</span><button type='button' data-reset
+        >{copy.clear} →</button>
+    </div>
+    <nav
+      class='reading-pagination'
+      aria-label={isChinese ? '阅读笔记分页' : 'Reading note pagination'}
+      data-pagination
+      hidden
+    >
+      <button type='button' data-page-prev>{copy.prev}</button><span data-page-label></span><button
+        type='button'
+        data-page-next>{copy.next}</button>
+    </nav>
+  </paper-library>
+  <footer class='reading-footnote'>
+    <p>{copy.footnote}</p><a href={href('/collections')}>{copy.collections}</a>
+  </footer>
+</main>
+
+<script>
+  import '../../scripts/paper-library'
+</script>
+
+<style>
+  .reading-center {
+    padding-top: 2.5rem;
+  }
+  .reading-back {
+    color: hsl(var(--muted-foreground));
+    font-size: 0.8rem;
+  }
+  .reading-heading {
+    max-width: 48rem;
+    margin-top: 3rem;
+  }
+  .reading-heading h1 {
+    margin: 0.8rem 0 1.1rem;
+    font:
+      500 clamp(3rem, 7vw, 5.4rem)/1.08 Georgia,
+      'Times New Roman',
+      serif;
+    letter-spacing: -0.055em;
+  }
+  .reading-heading h1 span {
+    color: hsl(var(--primary));
+  }
+  .reading-intro {
+    max-width: 39rem;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.98rem;
+    line-height: 1.85;
+  }
+  .reading-stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 2rem;
+    margin: 2.75rem 0 3.25rem;
+  }
+  .reading-stats > div {
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 0.65rem;
+    border-top: 1px solid var(--rule);
+    padding-top: 1rem;
+  }
+  .reading-stats dt {
+    color: hsl(var(--muted-foreground));
+    font-size: 0.75rem;
+  }
+  .reading-stats dd {
+    margin: 0;
+    font:
+      500 2rem/1.15 Georgia,
+      'Times New Roman',
+      serif;
+  }
+  .reading-stats .reading-stat-date {
+    font-size: 1.2rem;
+    padding-top: 0.4rem;
+  }
+  paper-library {
+    display: block;
+  }
+  .reading-tools {
+    padding: 1.5rem;
+    border: 1px solid var(--rule);
+    background: hsl(var(--muted) / 0.28);
+  }
+  .search-label {
+    display: block;
+    margin-bottom: 0.8rem;
+    font-size: 0.82rem;
+  }
+  .reading-search {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--rule);
+    background: hsl(var(--background));
+    color: hsl(var(--muted-foreground));
+  }
+  .reading-search:focus-within {
+    border-color: hsl(var(--primary));
+  }
+  .reading-search input {
+    min-width: 0;
+    width: 100%;
+    border: 0;
+    outline-offset: 5px;
+    background: transparent;
+    color: hsl(var(--foreground));
+    font-size: 0.88rem;
+  }
+  .reading-search input::placeholder {
+    color: hsl(var(--muted-foreground));
+  }
+  .reading-search kbd {
+    padding: 0.05rem 0.4rem;
+    border: 1px solid var(--rule);
+    font:
+      0.7rem/1.6 ui-monospace,
+      monospace;
+  }
+  .search-hint,
+  .search-feedback {
+    margin: 0.7rem 0 0;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.75rem;
+    line-height: 1.8;
+  }
+  .topic-filter {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    margin-top: 1.5rem;
+  }
+  .filter-caption {
+    margin-right: 0.35rem;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.75rem;
+  }
+  .topic-filter button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.4rem 0.75rem;
+    border: 1px solid var(--rule);
+    color: hsl(var(--muted-foreground));
+    background: hsl(var(--background));
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+  .topic-filter button[aria-pressed='true'] {
+    border-color: hsl(var(--primary));
+    color: hsl(var(--primary));
+    background: hsl(var(--primary) / 0.06);
+  }
+  .topic-filter button span {
+    font:
+      0.7rem ui-monospace,
+      monospace;
+    opacity: 0.7;
+  }
+  .reading-selects {
+    display: flex;
+    align-items: end;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-top: 1.35rem;
+  }
+  .reading-selects label {
+    display: grid;
+    gap: 0.5rem;
+    flex: 1;
+    min-width: 8rem;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.72rem;
+  }
+  .reading-selects select {
+    width: 100%;
+    min-height: 2.6rem;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid var(--rule);
+    color: hsl(var(--foreground));
+    background: hsl(var(--background));
+    font: inherit;
+    font-size: 0.8rem;
+  }
+  .reading-selects select:focus-visible {
+    outline: 2px solid hsl(var(--primary));
+    outline-offset: 3px;
+  }
+  .reset-filters {
+    min-height: 2.6rem;
+    padding: 0.5rem 0.2rem;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+  .reading-results-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+    margin: 2.75rem 0 1rem;
+  }
+  .reading-results-heading h2 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 500;
+  }
+  .reading-results-heading p {
+    margin: 0;
+    color: hsl(var(--muted-foreground));
+    font:
+      0.72rem/1.7 ui-monospace,
+      monospace;
+    text-align: right;
+  }
+  .reading-list {
+    padding: 0;
+    margin: 0;
+    list-style: none;
+  }
+  .paper-row {
+    display: grid;
+    grid-template-columns: 2.75rem minmax(0, 1fr) 1.5rem;
+    gap: 1rem;
+    padding: 1.75rem 0;
+    border-top: 1px solid var(--rule);
+  }
+  .paper-row:last-child {
+    border-bottom: 1px solid var(--rule);
+  }
+  .paper-number {
+    padding-top: 0.2rem;
+    color: hsl(var(--primary));
+    font:
+      0.72rem ui-monospace,
+      monospace;
+  }
+  .paper-row-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    color: hsl(var(--muted-foreground));
+    font:
+      0.7rem/1.7 ui-monospace,
+      monospace;
+  }
+  .paper-main h3 {
+    margin: 0.7rem 0 0;
+    font-size: 1.15rem;
+    font-weight: 520;
+    line-height: 1.6;
+  }
+  .source-title {
+    margin: 0.5rem 0 0;
+    max-width: 53rem;
+    color: hsl(var(--muted-foreground));
+    font:
+      italic 1rem/1.65 Georgia,
+      'Times New Roman',
+      serif;
+  }
+  .paper-description,
+  .paper-excerpt {
+    max-width: 55rem;
+    margin: 0.75rem 0 0;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.87rem;
+    line-height: 1.85;
+  }
+  .paper-excerpt {
+    padding-left: 0.85rem;
+    border-left: 2px solid hsl(var(--primary) / 0.45);
+  }
+  .paper-excerpt :global(mark) {
+    color: hsl(var(--foreground));
+    background: hsl(var(--primary) / 0.15);
+  }
+  .paper-taxonomy {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem 1rem;
+    margin-top: 1rem;
+    color: hsl(var(--muted-foreground));
+    font:
+      0.72rem/1.7 ui-monospace,
+      monospace;
+  }
+  .paper-taxonomy a {
+    color: hsl(var(--primary));
+  }
+  .paper-taxonomy .source-link {
+    color: hsl(var(--muted-foreground));
+  }
+  .paper-keywords {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.9rem;
+    margin-top: 0.65rem;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.7rem;
+  }
+  .paper-keywords a {
+    border-bottom: 1px solid var(--rule);
+  }
+  .paper-arrow {
+    color: hsl(var(--muted-foreground));
+    font-size: 1.25rem;
+  }
+  .reading-empty {
+    padding: 2.5rem 1rem;
+    text-align: center;
+    border-block: 1px solid var(--rule);
+  }
+  .reading-empty p {
+    margin: 0 0 0.5rem;
+  }
+  .reading-empty span {
+    display: block;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.82rem;
+    line-height: 1.8;
+  }
+  .reading-empty button {
+    margin-top: 1rem;
+    color: hsl(var(--primary));
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+  .reading-pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1.5rem;
+    font-size: 0.78rem;
+  }
+  .reading-pagination button {
+    padding: 0.5rem 0;
+    cursor: pointer;
+  }
+  .reading-pagination button:disabled {
+    color: hsl(var(--muted-foreground));
+    opacity: 0.5;
+    cursor: default;
+  }
+  .reading-pagination span {
+    color: hsl(var(--muted-foreground));
+    font:
+      0.72rem ui-monospace,
+      monospace;
+  }
+  .reading-footnote {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-top: 2rem;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.75rem;
+    line-height: 1.85;
+  }
+  .reading-footnote p {
+    margin: 0;
+    max-width: 42rem;
+  }
+  .reading-footnote a {
+    color: hsl(var(--primary));
+  }
+  [hidden] {
+    display: none !important;
+  }
+  @media (max-width: 640px) {
+    .reading-center {
+      padding-top: 1.5rem;
+    }
+    .reading-heading {
+      margin-top: 2.25rem;
+    }
+    .reading-stats {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1.4rem;
+      margin: 2rem 0 2.25rem;
+    }
+    .reading-tools {
+      padding: 1rem;
+    }
+    .reading-search {
+      padding: 0.8rem;
+      gap: 0.55rem;
+    }
+    .reading-search input {
+      font-size: 0.82rem;
+    }
+    .reading-search kbd {
+      display: none;
+    }
+    .filter-caption {
+      flex-basis: 100%;
+    }
+    .reading-selects {
+      gap: 0.85rem;
+    }
+    .reading-selects label {
+      min-width: calc(50% - 0.85rem);
+    }
+    .reset-filters {
+      flex: 1;
+      text-align: left;
+    }
+    .paper-row {
+      grid-template-columns: 1.3rem minmax(0, 1fr) 1rem;
+      gap: 0.55rem;
+      padding-block: 1.35rem;
+    }
+    .paper-main h3 {
+      font-size: 1.05rem;
+    }
+    .source-title {
+      font-size: 0.95rem;
+    }
+    .reading-results-heading {
+      margin-top: 2rem;
+    }
+  }
+</style>

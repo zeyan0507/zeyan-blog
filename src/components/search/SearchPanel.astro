@@ -71,5 +71,6 @@ const isChinese = language?.startsWith('zh')
   .search-status { color: hsl(var(--muted-foreground)); font-size: 0.9rem; line-height: 1.7; }
   notebook-search :global(.pagefind-ui__search-input) { font-weight: 400; }
   notebook-search :global(.pagefind-ui__result-link) { text-underline-offset: 0.25rem; }
+  notebook-search :global(.pagefind-ui__filter-block:has(input[name='kind'])) { display: none !important; }
   notebook-search :global(mark) { color: hsl(var(--foreground)); background: hsl(var(--primary) / 0.18); }
 </style>

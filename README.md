@@ -53,6 +53,29 @@ Add a Markdown or MDX file under `src/content/blog/` with the required frontmatt
 The production build emits static files to `dist/`, which can be deployed to any static hosting
 provider.
 
+## Paper reading
+
+The bilingual reading center uses the existing `/blog/paper-reading` and `/zh/blog/paper-reading`
+routes. It supports topic, source-paper year, reading-depth filters, sorting, eight-note pagination,
+and scoped full-text search. Filters are shareable URL parameters. Press `/` to focus its search.
+
+Published posts with `category: paper-reading` or optional `paper` metadata appear in their language's
+index. Optional `researchTopics` use slugs from `src/paper-reading.config.ts`; `readingDepth` accepts
+`skim`, `deep`, or `reproduced`. Omitted depths stay unmarked. The `paper` object requires a `title`
+and optionally accepts `authors`, `year`, `venue`, `url`, `doi`, and `arxivId`. Use the same paper
+identifier on related notes and translations for deduplication. Unlinked notes are not counted as papers.
+
+Run `npm run build` and `npm run preview` to verify Pagefind full-text search. Development mode and
+unavailable production indexes fall back to metadata matching with an explicit notice. Drafts are
+excluded from both the center and the search index. See `README-zh-CN.md` for a frontmatter example.
+
+## Version history
+
+The pre-redesign source is preserved at tag `before-paper-reading-2026-10-05` (commit `328e466`).
+Export it with `git archive`, or inspect it in a separate detached worktree. To undo the redesign
+on the shared branch, use `git revert` on the `feat: add bilingual paper reading center` commit,
+then push normally. Do not force-push history. Detailed instructions are in `README-zh-CN.md`.
+
 ## License
 
 This repository includes code adapted from Astro Theme Pure. See `LICENSE` for the repository

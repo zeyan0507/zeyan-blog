@@ -4,6 +4,15 @@ description: 'Working notes on temporal-difference residuals, lambda returns, an
 publishDate: '2026-09-18'
 category: paper-reading
 collection: reinforcement-learning
+researchTopics:
+  - reinforcement-learning
+paper:
+  title: 'High-Dimensional Continuous Control Using Generalized Advantage Estimation'
+  authors: ['John Schulman', 'Philipp Moritz', 'Sergey Levine', 'Michael Jordan', 'Pieter Abbeel']
+  year: 2015
+  venue: arXiv
+  url: 'https://arxiv.org/abs/1506.02438'
+  arxivId: '1506.02438'
 featured: true
 tags:
   - reinforcement learning
@@ -58,12 +67,12 @@ At $\lambda=0$, GAE is the one-step residual. It has relatively low variance, bu
 
 This is not a universal “higher is better” knob. The useful setting depends on rollout length, reward scale, value-function quality, and how aggressively the policy is updated between batches.
 
-| Estimator | Bias from $V_\phi$ | Variance | Typical role |
-| --- | --- | --- | --- |
-| One-step TD | Higher | Lower | Fast, local signal |
-| GAE, small $\lambda$ | Moderate | Moderate | Stable actor–critic updates |
-| GAE, large $\lambda$ | Lower | Higher | Longer credit assignment |
-| Monte Carlo | Lowest from bootstrapping | Highest | Episodic reference |
+| Estimator            | Bias from $V_\phi$        | Variance | Typical role                |
+| -------------------- | ------------------------- | -------- | --------------------------- |
+| One-step TD          | Higher                    | Lower    | Fast, local signal          |
+| GAE, small $\lambda$ | Moderate                  | Moderate | Stable actor–critic updates |
+| GAE, large $\lambda$ | Lower                     | Higher   | Longer credit assignment    |
+| Monte Carlo          | Lowest from bootstrapping | Highest  | Episodic reference          |
 
 ## A practical diagnostic
 

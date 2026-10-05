@@ -1,0 +1,138 @@
+---
+import type { CollectionEntry } from 'astro:content'
+
+import { localizePath } from '@/utils/languages'
+
+import { readingDepths, researchTopics } from '../../paper-reading.config'
+
+interface Props {
+  post: CollectionEntry<'blog'>
+}
+const { post } = Astro.props
+const { paper, readingDepth, researchTopics: topics, language } = post.data
+const isChinese = language.toLowerCase().startsWith('zh')
+const source =
+  paper?.url ??
+  (paper?.doi
+    ? `https://doi.org/${paper.doi}`
+    : paper?.arxivId
+      ? `https://arxiv.org/abs/${paper.arxivId}`
+      : undefined)
+---
+
+<section class='paper-info' aria-label={isChinese ? '论文信息' : 'Paper details'}>
+  <div class='paper-info-heading'>
+    <p class='eyebrow'>{isChinese ? '原论文 / 阅读记录' : 'Source paper / reading record'}</p>{
+      source && (
+        <a href={source} target='_blank' rel='noreferrer'>
+          {isChinese ? '阅读原文 ↗' : 'Original paper ↗'}
+        </a>
+      )
+    }
+  </div>
+  {
+    paper && (
+      <>
+        <h2 lang='en' data-pagefind-weight='3'>
+          {paper.title}
+        </h2>
+        {paper.authors.length > 0 && <p class='paper-authors'>{paper.authors.join(' · ')}</p>}
+        <p class='paper-identifiers'>
+          {paper.venue && <span>{paper.venue}</span>}
+          {paper.year && <span>{paper.year}</span>}
+          {paper.doi && <span>DOI: {paper.doi}</span>}
+          {paper.arxivId && <span>arXiv: {paper.arxivId}</span>}
+        </p>
+      </>
+    )
+  }
+  <div class='paper-topics'>
+    {
+      topics.map((slug) => {
+        const topic = researchTopics.find((topic) => topic.slug === slug)
+        return (
+          <a
+            href={`${localizePath('/blog/paper-reading', language)}?topic=${encodeURIComponent(slug)}`}
+          >
+            {isChinese ? topic?.labelZh : topic?.label}
+          </a>
+        )
+      })
+    }
+    <span
+      >{isChinese ? '阅读进度' : 'Reading depth'} · {
+        isChinese
+          ? readingDepths[readingDepth ?? 'unmarked'].labelZh
+          : readingDepths[readingDepth ?? 'unmarked'].label
+      }</span
+    >
+  </div>
+  {
+    !paper && (
+      <p class='paper-missing'>
+        {isChinese
+          ? '原论文信息尚未关联；这篇内容计入笔记数，不计入论文数。'
+          : 'No source paper linked yet. This entry counts as a note, not a paper.'}
+      </p>
+    )
+  }
+</section>
+
+<style>
+  .paper-info {
+    margin-top: 2rem;
+    padding: 1.35rem 1.5rem;
+    background: hsl(var(--muted) / 0.45);
+    border: 1px solid var(--rule);
+  }
+  .paper-info-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .paper-info-heading a {
+    flex-shrink: 0;
+    color: hsl(var(--primary));
+    font-size: 0.76rem;
+  }
+  .paper-info h2 {
+    margin: 0.9rem 0 0.6rem;
+    font:
+      500 1.15rem/1.5 Georgia,
+      'Times New Roman',
+      serif;
+    letter-spacing: -0.015em;
+  }
+  .paper-authors,
+  .paper-missing {
+    color: hsl(var(--muted-foreground));
+    font-size: 0.8rem;
+    line-height: 1.8;
+  }
+  .paper-identifiers,
+  .paper-topics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem 1rem;
+    margin-top: 0.75rem;
+    color: hsl(var(--muted-foreground));
+    font:
+      0.72rem/1.7 ui-monospace,
+      monospace;
+    overflow-wrap: anywhere;
+  }
+  .paper-topics a {
+    color: hsl(var(--primary));
+    text-decoration: underline;
+    text-underline-offset: 0.25rem;
+  }
+  @media (max-width: 640px) {
+    .paper-info {
+      padding: 1rem;
+    }
+    .paper-info-heading {
+      align-items: start;
+    }
+  }
+</style>

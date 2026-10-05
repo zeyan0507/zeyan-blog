@@ -1,0 +1,18 @@
+---
+import { getCollection } from 'astro:content'
+
+import PageLayout from '@/layouts/BaseLayout.astro'
+import ReadingCenter from '@/components/papers/ReadingCenter.astro'
+
+const posts = await getCollection(
+  'blog',
+  ({ data }) => !data.draft && data.language.toLowerCase().startsWith('zh')
+)
+const meta = {
+  title: '论文阅读',
+  description: '按研究方向、论文年份与阅读进度浏览笔记，搜索论文信息与笔记全文。',
+  language: 'zh-CN'
+}
+---
+
+<PageLayout {meta}><ReadingCenter language='zh-CN' {posts} /></PageLayout>

@@ -1,0 +1,19 @@
+---
+import { getCollection } from 'astro:content'
+
+import PageLayout from '@/layouts/BaseLayout.astro'
+import ReadingCenter from '@/components/papers/ReadingCenter.astro'
+
+const posts = await getCollection(
+  'blog',
+  ({ data }) => !data.draft && !data.language.toLowerCase().startsWith('zh')
+)
+const meta = {
+  title: 'Paper reading',
+  description:
+    'Browse reading notes by topic, paper year, and reading depth. Search paper details and full-text notes.',
+  language: 'en'
+}
+---
+
+<PageLayout {meta}><ReadingCenter language='en' {posts} /></PageLayout>

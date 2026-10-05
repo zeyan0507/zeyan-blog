@@ -1,9 +1,11 @@
 ---
 import type { CollectionEntry } from 'astro:content'
-import CollectionList from '@/components/collections/CollectionList.astro'
+
 import PostList from '@/components/blog/PostList.astro'
-import { site } from '@/site-config'
+import CollectionList from '@/components/collections/CollectionList.astro'
 import { localizePath } from '@/utils/languages'
+import { getReadingStats, isPaperNote } from '@/utils/paper-reading'
+import { site } from '@/site-config'
 
 interface Props {
   language: string
@@ -15,6 +17,14 @@ const { language, posts, collections } = Astro.props
 const isChinese = language.toLowerCase().startsWith('zh')
 const href = (path: string) => localizePath(path, language)
 const recent = posts.slice(0, 4)
+const readingNotes = posts
+  .filter(isPaperNote)
+  .sort(
+    (first, second) =>
+      (second.data.updatedDate ?? second.data.publishDate).valueOf() -
+      (first.data.updatedDate ?? first.data.publishDate).valueOf()
+  )
+const readingStats = getReadingStats(readingNotes)
 const launchedAt = new Date('2026-10-05T00:00:00+08:00')
 const daysOnline = Math.max(1, Math.floor((Date.now() - launchedAt.valueOf()) / 86_400_000) + 1)
 const countWords = (value = '') => {
@@ -24,19 +34,48 @@ const countWords = (value = '') => {
 }
 const totalWords = posts.reduce((total, post) => total + countWords(post.body), 0)
 const latestDate = posts[0]?.data.updatedDate ?? posts[0]?.data.publishDate
-const latestLabel = latestDate?.toLocaleDateString(isChinese ? 'zh-CN' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' }) ?? '—'
+const latestLabel =
+  latestDate?.toLocaleDateString(isChinese ? 'zh-CN' : 'en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  }) ?? '—'
 
-const copy = isChinese ? {
-  about: '关于', more: '更多关于我 →', education: '教育经历', school: '西安电子科技大学',
-  educationDetail: '本科大四 · 专业与更多经历待补充', statistics: '博客统计', days: '上线天数',
-  updated: '最近更新', words: '总字数', posts: '文章', latest: '最近文章', allPosts: '全部文章 →',
-  collections: '专题集', allCollections: '查看全部 →', github: 'GitHub'
-} : {
-  about: 'About', more: 'More about me →', education: 'Education', school: 'Xidian University',
-  educationDetail: 'Senior undergraduate · More details to come', statistics: 'Statistics', days: 'Days Online',
-  updated: 'Last Updated', words: 'Total Words', posts: 'Posts', latest: 'Recent writing', allPosts: 'All posts →',
-  collections: 'Collections', allCollections: 'View all →', github: 'GitHub'
-}
+const copy = isChinese
+  ? {
+      about: '关于',
+      more: '更多关于我 →',
+      education: '教育经历',
+      school: '西安电子科技大学',
+      educationDetail: '本科大四 · 专业与更多经历待补充',
+      statistics: '博客统计',
+      days: '上线天数',
+      updated: '最近更新',
+      words: '总字数',
+      posts: '文章',
+      latest: '最近文章',
+      allPosts: '全部文章 →',
+      collections: '专题集',
+      allCollections: '查看全部 →',
+      github: 'GitHub'
+    }
+  : {
+      about: 'About',
+      more: 'More about me →',
+      education: 'Education',
+      school: 'Xidian University',
+      educationDetail: 'Senior undergraduate · More details to come',
+      statistics: 'Statistics',
+      days: 'Days Online',
+      updated: 'Last Updated',
+      words: 'Total Words',
+      posts: 'Posts',
+      latest: 'Recent writing',
+      allPosts: 'All posts →',
+      collections: 'Collections',
+      allCollections: 'View all →',
+      github: 'GitHub'
+    }
 
 const profileName = isChinese ? site.profile.nameZh : site.profile.name
 const profileLocation = isChinese ? site.profile.locationZh : site.profile.location
@@ -52,7 +91,9 @@ const profileIntro = isChinese ? site.profile.introductionZh : site.profile.intr
       <h1>{profileName}<span>.</span></h1>
       <p class='profile-location'>{profileLocation}</p>
       <p class='profile-role'>{profileRole}</p>
-      <div class='profile-links'><a href={site.social.github} target='_blank' rel='noreferrer'>{copy.github} ↗</a></div>
+      <div class='profile-links'>
+        <a href={site.social.github} target='_blank' rel='noreferrer'>{copy.github} ↗</a>
+      </div>
     </div>
   </section>
 
@@ -62,69 +103,269 @@ const profileIntro = isChinese ? site.profile.introductionZh : site.profile.intr
   </section>
 
   <section class='profile-section animate'>
-    <div class='section-label'><p class='eyebrow'>02 / {copy.education}</p><h2>{copy.education}</h2></div>
-    <div class='education-row'><div><strong>{copy.school}</strong><p>{copy.educationDetail}</p></div><span>{isChinese ? '目前' : 'Current'}</span></div>
+    <div class='section-label'>
+      <p class='eyebrow'>02 / {copy.education}</p><h2>{copy.education}</h2>
+    </div>
+    <div class='education-row'>
+      <div><strong>{copy.school}</strong><p>{copy.educationDetail}</p></div><span
+        >{isChinese ? '目前' : 'Current'}</span>
+    </div>
   </section>
 
   <section class='profile-section statistics-section animate'>
-    <div class='section-label'><p class='eyebrow'>03 / {copy.statistics}</p><h2>{copy.statistics}</h2></div>
+    <div class='section-label'>
+      <p class='eyebrow'>03 / {copy.statistics}</p><h2>{copy.statistics}</h2>
+    </div>
     <div class='stats-grid'>
       <div><strong>{daysOnline}</strong><span>{copy.days}</span></div>
       <div><strong class='date-stat'>{latestLabel}</strong><span>{copy.updated}</span></div>
-      <div><strong>{totalWords.toLocaleString(isChinese ? 'zh-CN' : 'en-US')}</strong><span>{copy.words}</span></div>
+      <div>
+        <strong>{totalWords.toLocaleString(isChinese ? 'zh-CN' : 'en-US')}</strong><span
+          >{copy.words}</span>
+      </div>
       <div><strong>{posts.length}</strong><span>{copy.posts}</span></div>
     </div>
   </section>
 
   <section class='content-section animate'>
-    <div class='content-heading'><div><p class='eyebrow'>04 / Blog</p><h2>{copy.latest}</h2></div><a href={href('/blog/all')}>{copy.allPosts}</a></div>
-    {recent.length ? <PostList posts={recent} compact /> : <p>{isChinese ? '文章正在整理中。' : 'Writing is being prepared.'}</p>}
+    <div class='content-heading'>
+      <div><p class='eyebrow'>04 / Blog</p><h2>{copy.latest}</h2></div><a href={href('/blog/all')}
+        >{copy.allPosts}</a>
+    </div>
+    {
+      recent.length ? (
+        <PostList posts={recent} compact />
+      ) : (
+        <p>{isChinese ? '文章正在整理中。' : 'Writing is being prepared.'}</p>
+      )
+    }
   </section>
 
   <section class='content-section animate'>
-    <div class='content-heading'><div><p class='eyebrow'>05 / Collections</p><h2>{copy.collections}</h2></div><a href={href('/collections')}>{copy.allCollections}</a></div>
+    <div class='content-heading'>
+      <div>
+        <p class='eyebrow'>05 / Paper reading</p><h2>{isChinese ? '论文阅读' : 'Paper reading'}</h2>
+      </div><a href={href('/blog/paper-reading')}
+        >{isChinese ? '打开阅读索引 →' : 'Open reading index →'}</a>
+    </div>
+    <p class='reading-preview-intro'>
+      {
+        isChinese
+          ? `已整理 ${readingStats.noteCount} 篇笔记，关联 ${readingStats.paperCount} 篇论文。按研究方向浏览，或从一个关键词开始。`
+          : `${readingStats.noteCount} notes on ${readingStats.paperCount} linked papers. Browse by topic, or start with a keyword.`
+      }
+    </p>
+    {readingNotes.length > 0 && <PostList posts={readingNotes.slice(0, 2)} compact />}
+  </section>
+
+  <section class='content-section animate'>
+    <div class='content-heading'>
+      <div><p class='eyebrow'>06 / Collections</p><h2>{copy.collections}</h2></div><a
+        href={href('/collections')}>{copy.allCollections}</a>
+    </div>
     <CollectionList collections={collections} limit={3} />
   </section>
 </main>
 
 <style>
-  .home-profile { padding-top: 4.5rem; }
-  .profile-hero { display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: 3.25rem; align-items: center; padding-bottom: 4rem; border-bottom: 1px solid var(--rule); }
-  .profile-hero img { width: 11rem; aspect-ratio: 1; border: 1px solid var(--rule); border-radius: 1.25rem; object-fit: cover; box-shadow: 0 18px 55px hsl(var(--foreground) / 0.08); }
-  .profile-copy h1 { margin: 0.7rem 0 0.4rem; font: 500 clamp(3.3rem, 8vw, 6.4rem)/0.95 Georgia, 'Times New Roman', serif; letter-spacing: -0.065em; }
-  .profile-copy h1 span { color: hsl(var(--primary)); }
-  .profile-location { margin: 0; color: hsl(var(--muted-foreground)); font: 0.76rem ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.08em; text-transform: uppercase; }
-  .profile-role { max-width: 38rem; margin: 1rem 0 0; color: hsl(var(--muted-foreground)); font-size: 1rem; line-height: 1.7; }
-  .profile-links { display: flex; gap: 1.2rem; margin-top: 1.25rem; font-size: 0.82rem; }
-  .profile-links a { padding-bottom: 0.2rem; border-bottom: 1px solid var(--rule); }
-  .profile-section { display: grid; grid-template-columns: minmax(10rem, 0.8fr) minmax(0, 2fr); gap: 4rem; padding: 3.5rem 0; border-bottom: 1px solid var(--rule); }
-  .section-label h2 { margin: 0.55rem 0 0; font-size: 1.25rem; font-weight: 520; }
-  .section-content { max-width: 42rem; }
-  .section-content p { margin: 0 0 1rem; color: hsl(var(--muted-foreground)); font-size: 1rem; line-height: 1.85; }
-  .section-content a { color: hsl(var(--primary)); font-size: 0.8rem; }
-  .education-row { display: flex; justify-content: space-between; gap: 2rem; padding-top: 0.1rem; }
-  .education-row strong { font-size: 1rem; font-weight: 550; }
-  .education-row p { margin: 0.45rem 0 0; color: hsl(var(--muted-foreground)); font-size: 0.86rem; }
-  .education-row > span { color: hsl(var(--muted-foreground)); font: 0.7rem ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
-  .stats-grid div { display: grid; gap: 0.4rem; padding-top: 0.85rem; border-top: 1px solid var(--rule); }
-  .stats-grid strong { font: 500 1.65rem/1 Georgia, 'Times New Roman', serif; }
-  .stats-grid .date-stat { font-size: 1rem; line-height: 1.4; }
-  .stats-grid span { color: hsl(var(--muted-foreground)); font-size: 0.72rem; }
-  .content-section { margin-top: 5rem; }
-  .content-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1.6rem; }
-  .content-heading h2 { margin: 0.55rem 0 0; font-size: 1.35rem; font-weight: 520; }
-  .content-heading > a { color: hsl(var(--muted-foreground)); font-size: 0.78rem; }
-  @media (max-width: 720px) {
-    .home-profile { padding-top: 3rem; }
-    .profile-hero { grid-template-columns: 6.5rem minmax(0, 1fr); gap: 1.5rem; padding-bottom: 3rem; }
-    .profile-hero img { width: 6.5rem; border-radius: 0.85rem; }
-    .profile-copy h1 { font-size: clamp(2.8rem, 14vw, 4.5rem); }
-    .profile-role { font-size: 0.9rem; }
-    .profile-section { grid-template-columns: 1fr; gap: 1.4rem; padding: 2.75rem 0; }
-    .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.6rem 1rem; }
-    .content-section { margin-top: 3.5rem; }
-    .content-heading { align-items: start; flex-direction: column; }
+  .home-profile {
+    padding-top: 4.5rem;
   }
-  @media (max-width: 430px) { .profile-hero { grid-template-columns: 1fr; } .profile-hero img { width: 7.5rem; } }
+  .profile-hero {
+    display: grid;
+    grid-template-columns: 11rem minmax(0, 1fr);
+    gap: 3.25rem;
+    align-items: center;
+    padding-bottom: 4rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  .profile-hero img {
+    width: 11rem;
+    aspect-ratio: 1;
+    border: 1px solid var(--rule);
+    border-radius: 1.25rem;
+    object-fit: cover;
+    box-shadow: 0 18px 55px hsl(var(--foreground) / 0.08);
+  }
+  .profile-copy h1 {
+    margin: 0.7rem 0 0.4rem;
+    font:
+      500 clamp(3.3rem, 8vw, 6.4rem)/0.95 Georgia,
+      'Times New Roman',
+      serif;
+    letter-spacing: -0.065em;
+  }
+  .profile-copy h1 span {
+    color: hsl(var(--primary));
+  }
+  .profile-location {
+    margin: 0;
+    color: hsl(var(--muted-foreground));
+    font:
+      0.76rem ui-monospace,
+      SFMono-Regular,
+      Menlo,
+      monospace;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .profile-role {
+    max-width: 38rem;
+    margin: 1rem 0 0;
+    color: hsl(var(--muted-foreground));
+    font-size: 1rem;
+    line-height: 1.7;
+  }
+  .profile-links {
+    display: flex;
+    gap: 1.2rem;
+    margin-top: 1.25rem;
+    font-size: 0.82rem;
+  }
+  .profile-links a {
+    padding-bottom: 0.2rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  .profile-section {
+    display: grid;
+    grid-template-columns: minmax(10rem, 0.8fr) minmax(0, 2fr);
+    gap: 4rem;
+    padding: 3.5rem 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .section-label h2 {
+    margin: 0.55rem 0 0;
+    font-size: 1.25rem;
+    font-weight: 520;
+  }
+  .section-content {
+    max-width: 42rem;
+  }
+  .section-content p {
+    margin: 0 0 1rem;
+    color: hsl(var(--muted-foreground));
+    font-size: 1rem;
+    line-height: 1.85;
+  }
+  .section-content a {
+    color: hsl(var(--primary));
+    font-size: 0.8rem;
+  }
+  .education-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 2rem;
+    padding-top: 0.1rem;
+  }
+  .education-row strong {
+    font-size: 1rem;
+    font-weight: 550;
+  }
+  .education-row p {
+    margin: 0.45rem 0 0;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.86rem;
+  }
+  .education-row > span {
+    color: hsl(var(--muted-foreground));
+    font:
+      0.7rem ui-monospace,
+      SFMono-Regular,
+      Menlo,
+      monospace;
+  }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+  }
+  .stats-grid div {
+    display: grid;
+    gap: 0.4rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid var(--rule);
+  }
+  .stats-grid strong {
+    font:
+      500 1.65rem/1 Georgia,
+      'Times New Roman',
+      serif;
+  }
+  .stats-grid .date-stat {
+    font-size: 1rem;
+    line-height: 1.4;
+  }
+  .stats-grid span {
+    color: hsl(var(--muted-foreground));
+    font-size: 0.72rem;
+  }
+  .content-section {
+    margin-top: 5rem;
+  }
+  .content-heading {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.6rem;
+  }
+  .content-heading h2 {
+    margin: 0.55rem 0 0;
+    font-size: 1.35rem;
+    font-weight: 520;
+  }
+  .content-heading > a {
+    color: hsl(var(--muted-foreground));
+    font-size: 0.78rem;
+  }
+  .reading-preview-intro {
+    margin: -0.35rem 0 1.35rem;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.85rem;
+    line-height: 1.85;
+  }
+  @media (max-width: 720px) {
+    .home-profile {
+      padding-top: 3rem;
+    }
+    .profile-hero {
+      grid-template-columns: 6.5rem minmax(0, 1fr);
+      gap: 1.5rem;
+      padding-bottom: 3rem;
+    }
+    .profile-hero img {
+      width: 6.5rem;
+      border-radius: 0.85rem;
+    }
+    .profile-copy h1 {
+      font-size: clamp(2.8rem, 14vw, 4.5rem);
+    }
+    .profile-role {
+      font-size: 0.9rem;
+    }
+    .profile-section {
+      grid-template-columns: 1fr;
+      gap: 1.4rem;
+      padding: 2.75rem 0;
+    }
+    .stats-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1.6rem 1rem;
+    }
+    .content-section {
+      margin-top: 3.5rem;
+    }
+    .content-heading {
+      align-items: start;
+      flex-direction: column;
+    }
+  }
+  @media (max-width: 430px) {
+    .profile-hero {
+      grid-template-columns: 1fr;
+    }
+    .profile-hero img {
+      width: 7.5rem;
+    }
+  }
 </style>

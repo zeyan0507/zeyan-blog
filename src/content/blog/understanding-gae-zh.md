@@ -4,6 +4,15 @@ description: '关于时序差分残差、λ 回报以及 GAE 背后偏差—方�
 publishDate: '2026-09-18'
 category: paper-reading
 collection: reinforcement-learning
+researchTopics:
+  - reinforcement-learning
+paper:
+  title: 'High-Dimensional Continuous Control Using Generalized Advantage Estimation'
+  authors: ['John Schulman', 'Philipp Moritz', 'Sergey Levine', 'Michael Jordan', 'Pieter Abbeel']
+  year: 2015
+  venue: arXiv
+  url: 'https://arxiv.org/abs/1506.02438'
+  arxivId: '1506.02438'
 featured: true
 tags:
   - reinforcement learning
@@ -58,12 +67,12 @@ def generalized_advantage(rewards, values, dones, gamma=0.99, lam=0.95):
 
 这不是一个“越大越好”的通用旋钮。有效设置取决于 rollout 长度、奖励尺度、价值函数质量，以及每批数据之间的策略更新强度。
 
-| 估计器 | $V_\phi$ 带来的偏差 | 方差 | 典型作用 |
-| --- | --- | --- | --- |
-| 一步 TD | 较高 | 较低 | 快速、局部的信号 |
-| 较小 $\lambda$ 的 GAE | 中等 | 中等 | 稳定的 actor–critic 更新 |
-| 较大 $\lambda$ 的 GAE | 较低 | 较高 | 更长的信用分配 |
-| 蒙特卡洛 | 自举偏差最低 | 最高 | 回合任务的参考 |
+| 估计器                | $V_\phi$ 带来的偏差 | 方差 | 典型作用                 |
+| --------------------- | ------------------- | ---- | ------------------------ |
+| 一步 TD               | 较高                | 较低 | 快速、局部的信号         |
+| 较小 $\lambda$ 的 GAE | 中等                | 中等 | 稳定的 actor–critic 更新 |
+| 较大 $\lambda$ 的 GAE | 较低                | 较高 | 更长的信用分配           |
+| 蒙特卡洛              | 自举偏差最低        | 最高 | 回合任务的参考           |
 
 ## 一个实用诊断
 
