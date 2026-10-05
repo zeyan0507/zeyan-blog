@@ -5,7 +5,7 @@ import { Icon } from 'astro-pure/user'
 import { localizePath } from '@/utils/languages'
 import { getReadingEntry, getReadingStats, isPaperNote } from '@/utils/paper-reading'
 
-import { readingDepths, researchTopics } from '../../paper-reading.config'
+import { researchTopics } from '../../paper-reading.config'
 
 interface Props {
   language: string
@@ -51,8 +51,6 @@ const copy = isChinese
       year: '论文年份',
       allYears: '全部年份',
       unknownYear: '年份未标注',
-      depth: '阅读进度',
-      allDepths: '全部进度',
       sort: '排序方式',
       updatedSort: '最近更新',
       publishedSort: '最近发布',
@@ -87,8 +85,6 @@ const copy = isChinese
       year: 'Paper year',
       allYears: 'All years',
       unknownYear: 'Year not marked',
-      depth: 'Reading depth',
-      allDepths: 'All depths',
       sort: 'Sort by',
       updatedSort: 'Recently updated',
       publishedSort: 'Recently published',
@@ -182,15 +178,6 @@ const copy = isChinese
           ></label
         >
         <label
-          >{copy.depth}<select name='depth' aria-label={copy.depth}
-            ><option value=''>{copy.allDepths}</option>{
-              Object.entries(readingDepths).map(([value, labels]) => (
-                <option value={value}>{isChinese ? labels.labelZh : labels.label}</option>
-              ))
-            }</select
-          ></label
-        >
-        <label
           >{copy.sort}<select name='sort' aria-label={copy.sort}
             ><option value='updated'>{copy.updatedSort}</option><option value='published'
               >{copy.publishedSort}</option
@@ -224,16 +211,9 @@ const copy = isChinese
               </span>
               <div class='paper-main'>
                 <div class='paper-row-meta'>
-                  <>
-                    <time datetime={(data.updatedDate ?? data.publishDate).toISOString()}>
-                      {(data.updatedDate ?? data.publishDate).toISOString().slice(0, 10)}
-                    </time>
-                    <span>
-                      {isChinese
-                        ? readingDepths[data.readingDepth ?? 'unmarked'].labelZh
-                        : readingDepths[data.readingDepth ?? 'unmarked'].label}
-                    </span>
-                  </>
+                  <time datetime={(data.updatedDate ?? data.publishDate).toISOString()}>
+                    {(data.updatedDate ?? data.publishDate).toISOString().slice(0, 10)}
+                  </time>
                 </div>
                 <a class='paper-note-link' href={href(`/blog/${id}`)}>
                   <h3>{data.title}</h3>
@@ -286,7 +266,8 @@ const copy = isChinese
     </ul>
     <div class='reading-empty' data-empty hidden>
       <p>{copy.empty}</p><span>{copy.emptyHint}</span><button type='button' data-reset
-        >{copy.clear} →</button>
+        >{copy.clear} →</button
+      >
     </div>
     <nav
       class='reading-pagination'
@@ -296,7 +277,8 @@ const copy = isChinese
     >
       <button type='button' data-page-prev>{copy.prev}</button><span data-page-label></span><button
         type='button'
-        data-page-next>{copy.next}</button>
+        data-page-next>{copy.next}</button
+      >
     </nav>
   </paper-library>
   <footer class='reading-footnote'>

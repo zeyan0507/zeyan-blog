@@ -3,13 +3,13 @@ import type { CollectionEntry } from 'astro:content'
 
 import { localizePath } from '@/utils/languages'
 
-import { readingDepths, researchTopics } from '../../paper-reading.config'
+import { researchTopics } from '../../paper-reading.config'
 
 interface Props {
   post: CollectionEntry<'blog'>
 }
 const { post } = Astro.props
-const { paper, readingDepth, researchTopics: topics, language } = post.data
+const { paper, researchTopics: topics, language } = post.data
 const isChinese = language.toLowerCase().startsWith('zh')
 const source =
   paper?.url ??
@@ -59,13 +59,6 @@ const source =
         )
       })
     }
-    <span
-      >{isChinese ? '阅读进度' : 'Reading depth'} · {
-        isChinese
-          ? readingDepths[readingDepth ?? 'unmarked'].labelZh
-          : readingDepths[readingDepth ?? 'unmarked'].label
-      }</span
-    >
   </div>
   {
     !paper && (

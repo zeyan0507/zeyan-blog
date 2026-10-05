@@ -10,7 +10,6 @@ export interface ReadingEntry {
   title: string
   description: string
   topics: string[]
-  depth: 'skim' | 'deep' | 'reproduced' | 'unmarked'
   year: string
   published: string
   updated: string
@@ -55,7 +54,6 @@ export const getReadingEntry = (post: Post): ReadingEntry => {
     title: data.title,
     description: data.description,
     topics: data.researchTopics,
-    depth: data.readingDepth ?? 'unmarked',
     year: data.paper?.year?.toString() ?? 'unknown',
     published: data.publishDate.toISOString(),
     updated: (data.updatedDate ?? data.publishDate).toISOString(),

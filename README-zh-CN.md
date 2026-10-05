@@ -54,7 +54,7 @@ npm run preview
 ## 论文阅读中心
 
 中英文阅读中心沿用 `/zh/blog/paper-reading` 和 `/blog/paper-reading`。首页与博客菜单提供入口，
-支持研究方向、论文年份、阅读进度、排序、每页 8 篇笔记和关键词查询；筛选条件保存在 URL 中。
+支持研究方向、论文年份、排序、每页 8 篇笔记和关键词查询；筛选条件保存在 URL 中。
 按 `/` 可以聚焦阅读中心查询框，`Ctrl/Cmd + K` 仍然打开全站搜索。
 
 `category: paper-reading` 的公开笔记，以及带有 `paper` 信息的其他公开文章，会出现在所属语言的阅读中心。
@@ -75,8 +75,6 @@ paper:
 
 研究方向的标识与中英文名称维护在 `src/paper-reading.config.ts`，一篇笔记可以有多个方向，
 只有已经有公开笔记的方向会显示为筛选按钮。细粒度方法仍使用 `tags`，系统学习路线仍使用专题集。
-`readingDepth` 为可选字段：`skim`（初读）、`deep`（精读）、`reproduced`（已复现）；
-省略时显示“未标注”，不会替作者推断阅读进度。
 
 论文标题为 `paper` 对象唯一必填项。其他可选字段为 `authors`、`year`、`venue`、`url`、`doi`、`arxivId`。
 请为同一论文的笔记和翻译使用相同的 DOI 或 arXiv ID，方便稳定去重；没有标识时按原文标题与年份去重。

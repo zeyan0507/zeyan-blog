@@ -64,7 +64,6 @@ const blog = defineCollection({
             }
             return normalized
           }),
-        readingDepth: z.enum(['skim', 'deep', 'reproduced']).optional(),
         paper: z
           .object({
             title: z.string().trim().min(1).max(300),

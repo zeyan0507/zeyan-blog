@@ -4,7 +4,6 @@ export interface ReadingFilters {
   query: string
   topic: string
   year: string
-  depth: string
   sort: 'updated' | 'published' | 'year'
   page: number
 }
@@ -29,8 +28,7 @@ export const selectReadingEntries = (
           (filters.topic === 'unclassified'
             ? entry.topics.length === 0
             : entry.topics.includes(filters.topic))) &&
-        (!filters.year || entry.year === filters.year) &&
-        (!filters.depth || entry.depth === filters.depth)
+        (!filters.year || entry.year === filters.year)
     )
     .sort((first, second) => {
       const comparison =

@@ -109,12 +109,10 @@ class PaperLibrary extends HTMLElement {
       )
     )
     const year = params.get('year') ?? ''
-    const depth = params.get('depth') ?? ''
     return {
       query: (params.get('q') ?? '').trim().slice(0, 300),
       topic: knownTopics.has(topic) ? topic : '',
       year: this.entries.some((entry) => entry.year === year) ? year : '',
-      depth: ['skim', 'deep', 'reproduced', 'unmarked'].includes(depth) ? depth : '',
       sort: sort === 'year' || sort === 'published' ? sort : 'updated',
       page: Math.max(1, Number.parseInt(params.get('page') ?? '1', 10) || 1)
     }
@@ -124,7 +122,7 @@ class PaperLibrary extends HTMLElement {
     const filters = this.filters()
     const query = this.querySelector<HTMLInputElement>('[name=q]')
     if (query) query.value = filters.query
-    for (const name of ['year', 'depth', 'sort'] as const) {
+    for (const name of ['year', 'sort'] as const) {
       const select = this.querySelector<HTMLSelectElement>(`[name=${name}]`)
       if (select) select.value = filters[name]
     }
@@ -136,6 +134,7 @@ class PaperLibrary extends HTMLElement {
   private change(overrides: Record<string, string>, replace = false) {
     clearTimeout(this.debounce)
     const url = new URL(window.location.href)
+    url.searchParams.delete('depth')
     const values: Record<string, string> = {
       q: this.querySelector<HTMLInputElement>('[name=q]')?.value.trim() ?? ''
     }

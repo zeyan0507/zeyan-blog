@@ -56,12 +56,11 @@ provider.
 ## Paper reading
 
 The bilingual reading center uses the existing `/blog/paper-reading` and `/zh/blog/paper-reading`
-routes. It supports topic, source-paper year, reading-depth filters, sorting, eight-note pagination,
+routes. It supports topic and source-paper year filters, sorting, eight-note pagination,
 and scoped full-text search. Filters are shareable URL parameters. Press `/` to focus its search.
 
 Published posts with `category: paper-reading` or optional `paper` metadata appear in their language's
-index. Optional `researchTopics` use slugs from `src/paper-reading.config.ts`; `readingDepth` accepts
-`skim`, `deep`, or `reproduced`. Omitted depths stay unmarked. The `paper` object requires a `title`
+index. Optional `researchTopics` use slugs from `src/paper-reading.config.ts`. The `paper` object requires a `title`
 and optionally accepts `authors`, `year`, `venue`, `url`, `doi`, and `arxivId`. Use the same paper
 identifier on related notes and translations for deduplication. Unlinked notes are not counted as papers.
 
