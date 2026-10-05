@@ -10,7 +10,7 @@ export const site = {
   location: 'Working across ideas, code, and experiments.',
   description:
     'A quiet notebook for research, engineering, paper reading, and the small ideas that become useful later.',
-  siteUrl: 'https://zeyan.dev',
+  siteUrl: 'https://zeyan-blog.vercel.app',
   locale: { lang: 'en-US', attrs: 'en_US', dateLocale: 'en-US' },
   navigation: [
     { label: 'Blog', href: '/blog' },
