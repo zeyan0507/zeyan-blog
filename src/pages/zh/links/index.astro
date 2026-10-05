@@ -1,6 +1,6 @@
 ---
 import PageLayout from '@/layouts/BaseLayout.astro'
-const meta={title:'链接',description:'找到这本笔记与作者的入口。',language:'zh-CN'}
+import LinksPage from '@/components/profile/LinksPage.astro'
+const meta = { title: '链接', description: '找到仄言、这本博客与未来友链的入口。', language: 'zh-CN' }
 ---
-<PageLayout {meta}><main class='page-column page'><header><p class='eyebrow'>链接 / 其他地方</p><h1>找到这本<br/><em>笔记。</em></h1><p>{meta.description}</p></header><nav><a href='/zh'>首页 <span>↗</span></a><a href='/zh/blog/all'>全部文章 <span>↗</span></a><a href='/rss.xml'>RSS <span>↗</span></a></nav></main></PageLayout>
-<style>.page{padding-top:4.5rem}.page header{max-width:44rem;padding-bottom:3rem;border-bottom:1px solid var(--rule)}.page h1{margin:.75rem 0 1.25rem;font:500 clamp(3rem,7vw,5.8rem)/.98 Georgia,serif;letter-spacing:-.065em}.page em,.page span{color:hsl(var(--primary));font-style:normal}.page header p:last-child{color:hsl(var(--muted-foreground))}.page nav{display:grid;max-width:42rem;margin-top:3rem}.page nav a{display:flex;justify-content:space-between;padding:1rem 0;border-top:1px solid var(--rule)}</style>
+<PageLayout {meta}><LinksPage language='zh-CN' /></PageLayout>

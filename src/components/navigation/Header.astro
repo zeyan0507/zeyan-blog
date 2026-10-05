@@ -7,6 +7,11 @@ const { language, languageLinks = [] } = Astro.props
 const currentPath = Astro.url.pathname
 const isChinese = language?.toLowerCase().startsWith('zh')
 const navigation = isChinese ? site.navigationZh : site.navigation
+const blogMenuSlugs = ['all', 'research', 'technical', 'daily-life', 'month-journal']
+const blogMenu = site.blogCategories.filter((category) => blogMenuSlugs.includes(category.slug))
+const blogMenuZh: Record<string, string> = {
+  all: '全部', research: '研究', technical: '技术', 'daily-life': '日常', 'month-journal': '月刊'
+}
 const homeHref = localizePath('/', language)
 const searchHref = localizePath('/search', language)
 ---
@@ -20,7 +25,17 @@ const searchHref = localizePath('/search', language)
       {navigation.map((item) => {
         const href = localizePath(item.href, language)
         const active = currentPath === href || currentPath.startsWith(`${href}/`)
-        return <a {href} class:list={['nav-link', { active }]} aria-current={active ? 'page' : undefined}>{item.label}</a>
+        return item.href === '/blog' ? (
+          <div class='nav-group'>
+            <a {href} class:list={['nav-link nav-blog-link', { active }]} aria-current={active ? 'page' : undefined}>{item.label}<span aria-hidden='true'>⌄</span></a>
+            <div class='blog-menu' aria-label={isChinese ? '博客分类' : 'Blog categories'}>
+              {blogMenu.map((category) => {
+                const categoryHref = localizePath(category.slug === 'all' ? '/blog/all' : `/blog/${category.slug}`, language)
+                return <a href={categoryHref}>{isChinese ? blogMenuZh[category.slug] : category.label}</a>
+              })}
+            </div>
+          </div>
+        ) : <a {href} class:list={['nav-link', { active }]} aria-current={active ? 'page' : undefined}>{item.label}</a>
       })}
     </nav>
     <a href={searchHref} class='header-tool search-trigger' aria-label={isChinese ? '搜索' : 'Search'} title={`${isChinese ? '搜索' : 'Search'} · Ctrl/Cmd + K`}>
@@ -38,7 +53,10 @@ const searchHref = localizePath('/search', language)
     {navigation.map((item) => {
       const href = localizePath(item.href, language)
       const active = currentPath === href || currentPath.startsWith(`${href}/`)
-      return <a {href} class:list={['block py-2 text-sm', { active }]} aria-current={active ? 'page' : undefined}>{item.label}</a>
+      return <div>
+        <a {href} class:list={['block py-2 text-sm', { active }]} aria-current={active ? 'page' : undefined}>{item.label}</a>
+        {item.href === '/blog' && <div class='mobile-blog-menu'>{blogMenu.map((category) => <a href={localizePath(category.slug === 'all' ? '/blog/all' : `/blog/${category.slug}`, language)}>{isChinese ? blogMenuZh[category.slug] : category.label}</a>)}</div>}
+      </div>
     })}
   </nav>
 </header>
@@ -96,6 +114,14 @@ const searchHref = localizePath('/search', language)
   .site-wordmark { color: hsl(var(--foreground)); }
   .wordmark-mark { display: inline-grid; place-items: center; width: 1.35rem; height: 1.35rem; color: hsl(var(--background)); background: hsl(var(--primary)); border-radius: 50%; font-family: Georgia, serif; font-size: 0.9rem; letter-spacing: 0; }
   .nav-link { position: relative; padding-block: 0.25rem; }
+  .nav-group { position: relative; }
+  .nav-blog-link { display: inline-flex; align-items: center; gap: 0.3rem; }
+  .nav-blog-link span { color: hsl(var(--muted-foreground)); font-size: 0.7rem; }
+  .blog-menu { position: absolute; top: calc(100% + 0.75rem); left: -1rem; display: grid; width: 10.5rem; padding: 0.55rem; border: 1px solid var(--rule); border-radius: 0.55rem; background: hsl(var(--background)); box-shadow: 0 14px 38px hsl(var(--foreground) / 0.09); opacity: 0; visibility: hidden; transform: translateY(-0.3rem); transition: opacity 160ms ease, transform 160ms ease, visibility 160ms ease; }
+  .blog-menu::before { content: ''; position: absolute; inset: -0.8rem 0 auto; height: 0.8rem; }
+  .blog-menu a { padding: 0.55rem 0.65rem; border-radius: 0.3rem; color: hsl(var(--muted-foreground)); }
+  .blog-menu a:hover { color: hsl(var(--foreground)); background: hsl(var(--muted) / 0.65); }
+  .nav-group:hover .blog-menu, .nav-group:focus-within .blog-menu { opacity: 1; visibility: visible; transform: translateY(0); }
   .nav-link::after { content: ''; position: absolute; left: 0; right: 100%; bottom: -0.25rem; height: 1px; background: hsl(var(--primary)); transition: right 180ms ease; }
   .nav-link:hover, .nav-link.active { color: hsl(var(--foreground)); }
   .nav-link.active::after, .nav-link:hover::after { right: 0; }
@@ -108,4 +134,6 @@ const searchHref = localizePath('/search', language)
   :global(.dark) .theme-moon { display: none; }
   .header-tool:hover { color: hsl(var(--primary)); }
   .mobile-menu a:hover, .mobile-menu a.active { color: hsl(var(--primary)); }
+  .mobile-blog-menu { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 0 0.55rem 1rem; }
+  .mobile-blog-menu a { padding-block: 0.35rem; color: hsl(var(--muted-foreground)); font-size: 0.78rem; }
 </style>

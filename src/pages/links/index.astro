@@ -1,36 +1,6 @@
 ---
 import PageLayout from '@/layouts/BaseLayout.astro'
-
-const meta = {
-  title: 'Links',
-  description: 'A small list of places to find this notebook and its author.'
-}
+import LinksPage from '@/components/profile/LinksPage.astro'
+const meta = { title: 'Links', description: 'Links to zeyan, this blog, and a future blogroll.' }
 ---
-
-<PageLayout {meta}>
-  <main class='page-column links-page'>
-    <header class='links-heading'>
-      <p class='eyebrow'>Links / elsewhere</p>
-      <h1>Find the<br /><em>notebook.</em></h1>
-      <p>{meta.description}</p>
-    </header>
-    <nav class='links-list' aria-label='External links'>
-      <a href='/'>Home <span>↗</span></a>
-      <a href='/blog/all'>All writing <span>↗</span></a>
-      <a href='/rss.xml'>RSS feed <span>↗</span></a>
-    </nav>
-  </main>
-</PageLayout>
-
-<style>
-  .links-page { padding-top: 4.5rem; }
-  .links-heading { max-width: 44rem; padding-bottom: 3rem; border-bottom: 1px solid var(--rule); }
-  .links-heading h1 { margin: 0.75rem 0 1.25rem; font: 500 clamp(3rem, 7vw, 5.8rem)/0.98 Georgia, 'Times New Roman', serif; letter-spacing: -0.065em; }
-  .links-heading h1 em { color: hsl(var(--primary)); font-style: normal; }
-  .links-heading p:last-child { max-width: 37rem; margin: 0; color: hsl(var(--muted-foreground)); font-size: 1rem; line-height: 1.8; }
-  .links-list { display: grid; max-width: 42rem; margin-top: 3rem; }
-  .links-list a { display: flex; justify-content: space-between; padding: 1rem 0; border-top: 1px solid var(--rule); font-size: 1rem; }
-  .links-list a:last-child { border-bottom: 1px solid var(--rule); }
-  .links-list span { color: hsl(var(--primary)); }
-  @media (max-width: 640px) { .links-page { padding-top: 3rem; } }
-</style>
+<PageLayout {meta}><LinksPage language='en-US' /></PageLayout>

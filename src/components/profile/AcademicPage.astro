@@ -1,0 +1,57 @@
+---
+import { site } from '@/site-config'
+
+interface Props { language: string }
+const { language } = Astro.props
+const isChinese = language.toLowerCase().startsWith('zh')
+const copy = isChinese ? {
+  eyebrow: '学术 / 个人档案', title: '学术', about: '关于我', interests: '研究方向', publications: '论文成果',
+  projects: '开源项目', role: '西安电子科技大学本科大四，目前在西安。',
+  pendingInterests: '研究方向将在确认后补充。', pendingPublications: '论文与学术成果将在确认后补充。',
+  active: '活跃', code: '代码', website: '网站'
+} : {
+  eyebrow: 'Academic / profile', title: 'Academic', about: 'About Me', interests: 'Research Interests', publications: 'Publications',
+  projects: 'Open-source Projects', role: "Senior undergraduate at Xidian University, currently based in Xi'an.",
+  pendingInterests: 'Research interests will be added after they are confirmed.', pendingPublications: 'Publications and academic work will be added here when available.',
+  active: 'Active', code: 'Code', website: 'Website'
+}
+---
+
+<main class='page-column academic-page'>
+  <aside class='toc' aria-label={isChinese ? '目录' : 'Table of contents'}>
+    <p>{isChinese ? '目录' : 'Table of contents'}</p>
+    <a href='#about'>{copy.about}</a><a href='#interests'>{copy.interests}</a><a href='#publications'>{copy.publications}</a><a href='#projects'>{copy.projects}</a>
+  </aside>
+  <article>
+    <header class='academic-heading'><p class='eyebrow'>{copy.eyebrow}</p><h1>{copy.title}</h1><p>{copy.role}</p></header>
+
+    <section id='about'><div><p class='eyebrow'>01</p><h2>{copy.about}</h2></div><div class='copy'><p>{copy.role}</p><p>{isChinese ? '这个页面会持续记录我的学习、研究与开源工作。其他个人与学术信息将在确认后逐步补充。' : 'This page will grow with my study, research, and open-source work. More details will be added as they are confirmed.'}</p></div></section>
+    <section id='interests'><div><p class='eyebrow'>02</p><h2>{copy.interests}</h2></div><div class='pending'>{copy.pendingInterests}</div></section>
+    <section id='publications'><div><p class='eyebrow'>03</p><h2>{copy.publications}</h2></div><div class='pending'>{copy.pendingPublications}</div></section>
+    <section id='projects'><div><p class='eyebrow'>04</p><h2>{copy.projects}</h2></div><div class='project-grid'>{site.projects.map((project) => <article class='project-card'><div><span>{copy.active}</span><h3>{project.name}</h3></div><p>{isChinese ? '一个用于发布文章、整理笔记与记录学习过程的中英文个人博客。' : project.description}</p><nav>{project.github && <a href={project.github} target='_blank' rel='noreferrer'>{copy.code} ↗</a>}{project.href && <a href={project.href} target='_blank' rel='noreferrer'>{copy.website} ↗</a>}</nav></article>)}</div></section>
+  </article>
+</main>
+
+<style>
+  .academic-page { display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: 4rem; padding-top: 4.5rem; }
+  .toc { position: sticky; top: 2rem; align-self: start; display: grid; gap: 0.55rem; padding-top: 0.2rem; }
+  .toc p { margin: 0 0 0.45rem; color: hsl(var(--muted-foreground)); font: 0.68rem ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; }
+  .toc a { color: hsl(var(--muted-foreground)); font-size: 0.78rem; }
+  .toc a:hover { color: hsl(var(--primary)); }
+  .academic-heading { max-width: 48rem; padding-bottom: 3.5rem; border-bottom: 1px solid var(--rule); }
+  .academic-heading h1 { margin: 0.7rem 0 1rem; font: 500 clamp(3.2rem, 7vw, 5.8rem)/1 Georgia, serif; letter-spacing: -0.06em; }
+  .academic-heading > p:last-child { color: hsl(var(--muted-foreground)); line-height: 1.8; }
+  section { display: grid; grid-template-columns: minmax(9rem, 0.7fr) minmax(0, 2fr); gap: 3rem; padding: 3.5rem 0; border-bottom: 1px solid var(--rule); scroll-margin-top: 2rem; }
+  section h2 { margin: 0.5rem 0 0; font-size: 1.25rem; font-weight: 520; }
+  .copy p, .pending, .project-card > p { margin: 0 0 1rem; color: hsl(var(--muted-foreground)); line-height: 1.8; }
+  .pending { padding: 1rem 0; border-block: 1px solid var(--rule); }
+  .project-grid { display: grid; gap: 1rem; }
+  .project-card { padding: 1.2rem; border: 1px solid var(--rule); border-radius: 0.65rem; }
+  .project-card > div { display: flex; flex-direction: row-reverse; justify-content: space-between; gap: 1rem; align-items: baseline; }
+  .project-card h3 { margin: 0; font-size: 1.05rem; }
+  .project-card span { color: hsl(var(--primary)); font: 0.68rem ui-monospace, monospace; }
+  .project-card > p { margin-top: 0.75rem; font-size: 0.9rem; }
+  .project-card nav { display: flex; gap: 1rem; color: hsl(var(--primary)); font-size: 0.78rem; }
+  @media (max-width: 800px) { .academic-page { grid-template-columns: 1fr; padding-top: 3rem; } .toc { position: static; display: flex; flex-wrap: wrap; gap: 0.55rem 1rem; } .toc p { width: 100%; } }
+  @media (max-width: 620px) { section { grid-template-columns: 1fr; gap: 1.4rem; padding: 2.75rem 0; } }
+</style>

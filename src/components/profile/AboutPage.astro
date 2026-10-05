@@ -1,0 +1,63 @@
+---
+import { site } from '@/site-config'
+interface Props { language: string }
+const { language } = Astro.props
+const isChinese = language.toLowerCase().startsWith('zh')
+const name = isChinese ? site.profile.nameZh : site.profile.name
+const location = isChinese ? site.profile.locationZh : site.profile.location
+const role = isChinese ? site.profile.roleZh : site.profile.role
+const copy = isChinese ? {
+  title: '关于', eyebrow: '关于 / 仄言', about: '个人介绍', distribution: '网站分发', tools: '常用工具', copyright: '版权', theme: '主题',
+  intro: '西电大四ing。目前在西安，这里用来记录文章、笔记，以及仍在学习中的事情。',
+  distributionIntro: '本站目前通过 Vercel 发布，源代码保存在 GitHub。后续如增加其他访问地址，会在这里同步更新。',
+  primary: '主站', source: '源代码', pending: '工具与工作流将在确认后补充。',
+  copyrightText: '除非另有说明，本站原创内容版权归仄言所有。引用时请注明作者和原文链接；未经许可，请勿用于商业用途。',
+  themeText: '本站使用 Astro 构建，在 Astro Pure 的基础上定制，并加入了中英文内容、个人档案与学术模块。', toc: '目录'
+} : {
+  title: 'About', eyebrow: 'About / zeyan', about: 'About Me', distribution: 'Website Distribution', tools: 'Tools', copyright: 'Copyright', theme: 'Theme',
+  intro: "Senior year at Xidian University, in progress. I'm currently based in Xi'an, and I use this site for writing, notes, and the things I am still learning.",
+  distributionIntro: 'This site is currently published on Vercel, with its source code maintained on GitHub. Additional mirrors will be listed here if they are added later.',
+  primary: 'Primary site', source: 'Source code', pending: 'Tools and workflow details will be added after they are confirmed.',
+  copyrightText: 'Unless otherwise stated, original content on this site is copyrighted by zeyan. Please credit the author and source when quoting, and do not use it commercially without permission.',
+  themeText: 'This site is built with Astro, customised from Astro Pure, and extended with bilingual content, profile, and academic modules.', toc: 'Table of contents'
+}
+---
+
+<main class='page-column about-profile'>
+  <aside class='toc'><p>{copy.toc}</p><a href='#about'>{copy.about}</a><a href='#distribution'>{copy.distribution}</a><a href='#tools'>{copy.tools}</a><a href='#copyright'>{copy.copyright}</a><a href='#theme'>{copy.theme}</a></aside>
+  <article>
+    <header class='about-heading'><p class='eyebrow'>{copy.eyebrow}</p><h1>{copy.title}<span>.</span></h1><p>{copy.intro}</p></header>
+    <section id='about'><div><p class='eyebrow'>01</p><h2>{copy.about}</h2></div><div class='profile-card'><img src={site.profile.avatar} alt={`${name} avatar`} width='160' height='160' /><div><h3>{name}</h3><p>{role}</p><p>{location}</p><a href={site.social.github} target='_blank' rel='noreferrer'>GitHub ↗</a></div></div></section>
+    <section id='distribution'><div><p class='eyebrow'>02</p><h2>{copy.distribution}</h2></div><div><p class='section-copy'>{copy.distributionIntro}</p><div class='link-cards'><a href={site.siteUrl}><span>{copy.primary}</span><strong>zeyan-blog.vercel.app</strong></a><a href='https://github.com/zeyan0507/zeyan-blog' target='_blank' rel='noreferrer'><span>{copy.source}</span><strong>GitHub / zeyan-blog</strong></a></div></div></section>
+    <section id='tools'><div><p class='eyebrow'>03</p><h2>{copy.tools}</h2></div><p class='pending'>{copy.pending}</p></section>
+    <section id='copyright'><div><p class='eyebrow'>04</p><h2>{copy.copyright}</h2></div><p class='section-copy'>{copy.copyrightText}</p></section>
+    <section id='theme'><div><p class='eyebrow'>05</p><h2>{copy.theme}</h2></div><p class='section-copy'>{copy.themeText}</p></section>
+  </article>
+</main>
+
+<style>
+  .about-profile { display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: 4rem; padding-top: 4.5rem; }
+  .toc { position: sticky; top: 2rem; align-self: start; display: grid; gap: 0.55rem; }
+  .toc p { margin: 0 0 0.45rem; color: hsl(var(--muted-foreground)); font: 0.68rem ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; }
+  .toc a { color: hsl(var(--muted-foreground)); font-size: 0.78rem; }
+  .toc a:hover { color: hsl(var(--primary)); }
+  .about-heading { max-width: 48rem; padding-bottom: 3.5rem; border-bottom: 1px solid var(--rule); }
+  .about-heading h1 { margin: 0.7rem 0 1rem; font: 500 clamp(3.2rem, 7vw, 5.8rem)/1 Georgia, serif; letter-spacing: -0.06em; }
+  .about-heading h1 span { color: hsl(var(--primary)); }
+  .about-heading > p:last-child, .section-copy { color: hsl(var(--muted-foreground)); line-height: 1.85; }
+  section { display: grid; grid-template-columns: minmax(9rem, 0.7fr) minmax(0, 2fr); gap: 3rem; padding: 3.5rem 0; border-bottom: 1px solid var(--rule); scroll-margin-top: 2rem; }
+  section h2 { margin: 0.5rem 0 0; font-size: 1.25rem; font-weight: 520; }
+  .profile-card { display: grid; grid-template-columns: 7rem 1fr; gap: 1.5rem; align-items: center; }
+  .profile-card img { width: 7rem; aspect-ratio: 1; border-radius: 0.8rem; object-fit: cover; }
+  .profile-card h3 { margin: 0 0 0.5rem; font: 500 1.6rem Georgia, serif; }
+  .profile-card p { margin: 0.25rem 0; color: hsl(var(--muted-foreground)); font-size: 0.86rem; }
+  .profile-card a { display: inline-block; margin-top: 0.7rem; color: hsl(var(--primary)); font-size: 0.78rem; }
+  .section-copy { max-width: 44rem; margin: 0; }
+  .link-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-top: 1.25rem; }
+  .link-cards a { display: grid; gap: 0.35rem; padding: 1rem; border: 1px solid var(--rule); border-radius: 0.55rem; }
+  .link-cards span { color: hsl(var(--muted-foreground)); font-size: 0.7rem; }
+  .link-cards strong { font-size: 0.86rem; font-weight: 520; }
+  .pending { margin: 0; padding: 1rem 0; border-block: 1px solid var(--rule); color: hsl(var(--muted-foreground)); }
+  @media (max-width: 800px) { .about-profile { grid-template-columns: 1fr; padding-top: 3rem; } .toc { position: static; display: flex; flex-wrap: wrap; gap: 0.55rem 1rem; } .toc p { width: 100%; } }
+  @media (max-width: 620px) { section { grid-template-columns: 1fr; gap: 1.4rem; padding: 2.75rem 0; } .link-cards { grid-template-columns: 1fr; } }
+</style>

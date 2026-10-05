@@ -5,7 +5,7 @@ interface Props { active?: string }
 const { active = 'all' } = Astro.props
 const language = Astro.currentLocale === 'zh' || Astro.url.pathname.startsWith('/zh') ? 'zh-CN' : 'en-US'
 const isChinese = language.startsWith('zh')
-const labels: Record<string, string> = { all: '全部', research: '研究', technical: '技术', 'paper-reading': '论文阅读', 'learning-notes': '学习笔记', 'daily-life': '日常' }
+const labels: Record<string, string> = { all: '全部', research: '研究', technical: '技术', 'paper-reading': '论文阅读', 'learning-notes': '学习笔记', 'daily-life': '日常', 'month-journal': '月刊' }
 ---
 
 <nav class='category-nav' aria-label={isChinese ? '博客分类' : 'Blog categories'}>

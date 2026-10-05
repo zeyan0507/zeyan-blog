@@ -32,7 +32,7 @@ export const getPageLanguageLinks = (pathname: string, language: string): Langua
   const isChinese = language.toLowerCase().startsWith('zh')
   const targetLanguage = isChinese ? 'en-US' : 'zh-CN'
   const plainPath = pathname === '/zh' ? '/' : pathname.replace(/^\/zh(?=\/)/u, '')
-  const supported = ['/', '/about', '/research', '/notes', '/projects', '/blog', '/search', '/collections', '/archives', '/tags', '/links']
+  const supported = ['/', '/about', '/academic', '/research', '/notes', '/projects', '/blog', '/search', '/collections', '/archives', '/tags', '/links']
   const hasParallelRoute = supported.some((prefix) => prefix === '/' ? plainPath === '/' : plainPath === prefix || plainPath.startsWith(`${prefix}/`))
   return [languageLink(hasParallelRoute ? localizePath(pathname, targetLanguage) : localizePath('/', targetLanguage), targetLanguage)]
 }

@@ -1,0 +1,39 @@
+---
+import { site } from '@/site-config'
+interface Props { language: string }
+const { language } = Astro.props
+const isChinese = language.toLowerCase().startsWith('zh')
+const copy = isChinese ? {
+  eyebrow: '链接 / 其他地方', title: '链接', intro: '找到这本笔记与作者，也为以后遇见更多有趣的网站留一个入口。',
+  common: '常用链接', apply: '友链申请', circle: '小圈子', github: '仄言的 GitHub', site: '博客主页',
+  githubDesc: '代码、项目与公开仓库。', siteDesc: '文章、笔记与个人档案。',
+  applyText: '友链申请方式将在联系方式确认后开放。', circleText: '友链列表暂时为空，后续会慢慢补充。'
+} : {
+  eyebrow: 'Links / elsewhere', title: 'Links', intro: 'A small directory for this notebook, its author, and the interesting sites still to be discovered.',
+  common: 'Common Links', apply: 'Apply Links', circle: 'Small Circle', github: "zeyan's GitHub", site: 'Blog home',
+  githubDesc: 'Code, projects, and public repositories.', siteDesc: 'Writing, notes, and a personal profile.',
+  applyText: 'Link applications will open after a public contact method is confirmed.', circleText: 'The blogroll is empty for now and will grow over time.'
+}
+---
+<main class='page-column links-page'>
+  <header><p class='eyebrow'>{copy.eyebrow}</p><h1>{copy.title}<span>.</span></h1><p>{copy.intro}</p></header>
+  <section><div><p class='eyebrow'>01</p><h2>{copy.common}</h2></div><div class='link-grid'><a href={site.social.github} target='_blank' rel='noreferrer'><strong>{copy.github}</strong><p>{copy.githubDesc}</p><span>github.com/zeyan0507 ↗</span></a><a href={site.siteUrl}><strong>{copy.site}</strong><p>{copy.siteDesc}</p><span>zeyan-blog.vercel.app ↗</span></a></div></section>
+  <section><div><p class='eyebrow'>02</p><h2>{copy.apply}</h2></div><p class='pending'>{copy.applyText}</p></section>
+  <section><div><p class='eyebrow'>03</p><h2>{copy.circle}</h2></div><p class='pending'>{copy.circleText}</p></section>
+</main>
+<style>
+  .links-page { padding-top: 4.5rem; }
+  header { max-width: 48rem; padding-bottom: 3.5rem; border-bottom: 1px solid var(--rule); }
+  header h1 { margin: 0.7rem 0 1rem; font: 500 clamp(3.2rem, 7vw, 5.8rem)/1 Georgia, serif; letter-spacing: -0.06em; }
+  header h1 span { color: hsl(var(--primary)); }
+  header > p:last-child { color: hsl(var(--muted-foreground)); line-height: 1.8; }
+  section { display: grid; grid-template-columns: minmax(10rem, 0.7fr) minmax(0, 2fr); gap: 3rem; padding: 3.5rem 0; border-bottom: 1px solid var(--rule); }
+  section h2 { margin: 0.5rem 0 0; font-size: 1.25rem; font-weight: 520; }
+  .link-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+  .link-grid a { padding: 1.15rem; border: 1px solid var(--rule); border-radius: 0.6rem; }
+  .link-grid strong { font-size: 1rem; }
+  .link-grid p { min-height: 2.8rem; margin: 0.55rem 0 0.9rem; color: hsl(var(--muted-foreground)); font-size: 0.84rem; line-height: 1.65; }
+  .link-grid span { color: hsl(var(--primary)); font-size: 0.7rem; }
+  .pending { margin: 0; padding: 1rem 0; border-block: 1px solid var(--rule); color: hsl(var(--muted-foreground)); line-height: 1.8; }
+  @media (max-width: 650px) { .links-page { padding-top: 3rem; } section { grid-template-columns: 1fr; gap: 1.4rem; padding: 2.75rem 0; } .link-grid { grid-template-columns: 1fr; } }
+</style>

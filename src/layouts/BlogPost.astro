@@ -21,7 +21,7 @@ const articleDate = publishDate.toISOString()
 const languageLinks = getBlogLanguageLinks(post, posts)
 const isChinese = data.language.toLowerCase().startsWith('zh')
 const categoryLabel = isChinese
-  ? ({ research: '研究', technical: '技术', 'paper-reading': '论文阅读', 'learning-notes': '学习笔记', 'daily-life': '日常' } as Record<string, string>)[data.category]
+  ? ({ research: '研究', technical: '技术', 'paper-reading': '论文阅读', 'learning-notes': '学习笔记', 'daily-life': '日常', 'month-journal': '月刊' } as Record<string, string>)[data.category]
   : site.blogCategories.find((category) => category.slug === data.category)?.label
 const related = posts.filter((post) => post.id !== id && (!data.translationKey || post.data.translationKey !== data.translationKey) && (
   (data.collection && post.data.collection === data.collection) || post.data.tags.some((tag) => data.tags.includes(tag))

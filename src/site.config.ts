@@ -2,32 +2,44 @@ import type { CardListData, Config, IntegrationUserConfig, ThemeUserConfig } fro
 
 export const site = {
   title: "Zeyan's Blog",
-  shortTitle: 'ZEYAN / NOTES',
-  author: 'Zeyan',
+  shortTitle: "ZEYAN'S BLOG",
+  author: 'zeyan',
+  authorZh: '仄言',
   monogram: 'Z',
   established: '2026',
-  tagline: 'Research, systems, and notes made durable.',
-  location: 'Working across ideas, code, and experiments.',
+  tagline: 'Senior year at Xidian University, in progress.',
+  location: "Xi'an, China",
   description:
-    'A quiet notebook for research, engineering, paper reading, and the small ideas that become useful later.',
+    'A personal notebook for research, technology, learning, and everyday life.',
   siteUrl: 'https://zeyan-blog.vercel.app',
+  profile: {
+    avatar: '/images/avatar-zeyan.jpg',
+    name: 'zeyan',
+    nameZh: '仄言',
+    location: "Xi'an, China",
+    locationZh: '西安',
+    role: 'Senior undergraduate at Xidian University',
+    roleZh: '西电大四',
+    introduction: 'Senior year at Xidian University, in progress.',
+    introductionZh: '西电大四ing'
+  },
   locale: { lang: 'en-US', attrs: 'en_US', dateLocale: 'en-US' },
   navigation: [
     { label: 'Blog', href: '/blog' },
-    { label: 'Research', href: '/research' },
-    { label: 'Notes', href: '/notes' },
+    { label: 'Academic', href: '/academic' },
     { label: 'Projects', href: '/projects' },
+    { label: 'Links', href: '/links' },
     { label: 'About', href: '/about' }
   ],
   navigationZh: [
     { label: '博客', href: '/blog' },
-    { label: '研究', href: '/research' },
-    { label: '笔记', href: '/notes' },
+    { label: '学术', href: '/academic' },
     { label: '项目', href: '/projects' },
+    { label: '链接', href: '/links' },
     { label: '关于', href: '/about' }
   ],
   social: {
-    github: undefined as string | undefined,
+    github: 'https://github.com/zeyan0507' as string | undefined,
     email: undefined as string | undefined,
     scholar: undefined as string | undefined
   },
@@ -39,43 +51,22 @@ export const site = {
     { slug: 'technical', label: 'Technical', description: 'Tools, systems, code, and practical notes.' },
     { slug: 'paper-reading', label: 'Paper Reading', description: 'Slow reading notes for papers worth returning to.' },
     { slug: 'learning-notes', label: 'Learning Notes', description: 'Concepts made clearer by writing them down.' },
-    { slug: 'daily-life', label: 'Daily Life', description: 'The non-technical edges of a technical life.' }
+    { slug: 'daily-life', label: 'Daily Life', description: 'The non-technical edges of a technical life.' },
+    { slug: 'month-journal', label: 'Month Journal', description: 'Monthly notes, changes, and small discoveries.' }
   ],
   collectionsIntro:
     'Long-running threads of study. Each collection gathers notes that are more useful together than alone.',
   projects: [
     {
-      name: 'Research Notebook',
-      description: 'A small publishing system for turning experiments and reading notes into durable knowledge.',
+      name: "Zeyan's Blog",
+      description: 'A bilingual personal blog for publishing notes and keeping useful ideas easy to revisit.',
       stack: 'Astro · TypeScript · Markdown',
-      status: 'In progress',
-      year: '2026',
-      href: undefined
-      ,github: undefined as string | undefined,
-      demo: undefined as string | undefined,
+      status: 'Active',
+      year: '2026—',
+      href: 'https://zeyan-blog.vercel.app',
+      github: 'https://github.com/zeyan0507/zeyan-blog' as string | undefined,
+      demo: 'https://zeyan-blog.vercel.app' as string | undefined,
       related: ['astro-blog-setup'] as string[]
-    },
-    {
-      name: 'Reproducible Lab Notes',
-      description: 'Templates and scripts for keeping model runs, assumptions, and results close together.',
-      stack: 'Python · PyTorch · Hydra',
-      status: 'Exploring',
-      year: '2025—',
-      href: undefined
-      ,github: undefined as string | undefined,
-      demo: undefined as string | undefined,
-      related: ['research-notes'] as string[]
-    },
-    {
-      name: 'Reading Queue',
-      description: 'A lightweight workflow for prioritising papers without losing the trail of open questions.',
-      stack: 'Markdown · CLI · SQLite',
-      status: 'Prototype',
-      year: '2025',
-      href: undefined
-      ,github: undefined as string | undefined,
-      demo: undefined as string | undefined,
-      related: ['from-dqn-to-ppo'] as string[]
     }
   ],
   research: {
@@ -94,9 +85,11 @@ export const site = {
   },
   about: {
     intro:
-      'I am Zeyan, a researcher and engineer keeping a public notebook for the ideas I want to understand properly.',
-    stack: ['Python', 'PyTorch', 'Linux', 'TypeScript', 'Astro', 'Markdown'],
-    education: [] as { period: string; title: string; detail: string }[],
+      "I'm zeyan, a senior undergraduate at Xidian University, currently based in Xi'an.",
+    stack: [] as string[],
+    education: [
+      { period: 'Current', title: 'Xidian University', detail: 'Senior undergraduate' }
+    ] as { period: string; title: string; detail: string }[],
     experience: [] as { period: string; title: string; detail: string }[],
     cv: undefined as string | undefined,
     principles: [
