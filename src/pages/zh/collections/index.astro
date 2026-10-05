@@ -1,0 +1,9 @@
+---
+import { getCollection } from 'astro:content'
+import PageLayout from '@/layouts/BaseLayout.astro'
+import CollectionList from '@/components/collections/CollectionList.astro'
+const collections=await getCollection('collections')
+const meta={title:'专题集',description:'持续整理的学习主题，将放在一起更有价值的笔记聚合起来。',language:'zh-CN'}
+---
+<PageLayout {meta}><main class='page-column page'><header><p class='eyebrow'>笔记 / 长期主题</p><h1>专题集</h1><p>{meta.description}</p></header><CollectionList {collections}/></main></PageLayout>
+<style>.page{padding-top:4.5rem}.page header{max-width:42rem;margin-bottom:3.5rem}.page h1{margin:.75rem 0 1rem;font:500 clamp(3rem,7vw,5.4rem)/1 Georgia,serif;letter-spacing:-.06em}.page header p:last-child{color:hsl(var(--muted-foreground));line-height:1.75}</style>

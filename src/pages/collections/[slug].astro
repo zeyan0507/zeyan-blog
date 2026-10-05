@@ -1,0 +1,36 @@
+---
+import { getCollection, type CollectionEntry } from 'astro:content'
+import { render } from 'astro:content'
+import { Image } from 'astro:assets'
+import { getBlogCollection } from 'astro-pure/server'
+import PageLayout from '@/layouts/BaseLayout.astro'
+import PostList from '@/components/blog/PostList.astro'
+import { collectionPosts } from '@/utils/collections'
+
+export const prerender = true
+
+export async function getStaticPaths() {
+  const collections = await getCollection('collections')
+  return collections.map((collection) => ({ params: { slug: collection.id }, props: { collection } }))
+}
+
+interface Props { collection: CollectionEntry<'collections'> }
+const { collection } = Astro.props
+const allPosts = (await getBlogCollection()).filter(({ data }) => !data.draft && !data.language.toLowerCase().startsWith('zh'))
+const posts = collectionPosts(collection, allPosts)
+const { Content } = await render(collection)
+const meta = { title: collection.data.title, description: collection.data.description }
+---
+
+<PageLayout {meta}><main class='page-column archive-page'><a class='back-link' href='/collections'>← All collections</a><header class='archive-heading' data-pagefind-body><p class='eyebrow'>Collection / {collection.data.status}</p><h1>{collection.data.title}</h1><p>{collection.data.description}</p><div class='collection-meta'>Started {collection.data.started.toISOString().slice(0, 10)}{collection.data.updated && ` · Updated ${collection.data.updated.toISOString().slice(0, 10)}`} · {posts.length} notes</div>{collection.data.cover && <Image src={collection.data.cover} alt='' class='collection-cover' />}<div class='prose collection-intro'><Content /></div></header><PostList {posts} /></main></PageLayout>
+
+<style>
+  .archive-page { padding-top: 3rem; }
+  .back-link { color: hsl(var(--muted-foreground)); font-size: 0.8rem; }
+  .archive-heading { max-width: 45rem; margin: 3.5rem 0; }
+  .archive-heading h1 { margin: 0.75rem 0 1rem; font: 500 clamp(2.8rem, 6vw, 5rem)/1.05 Georgia, Georgia, serif; letter-spacing: -0.06em; }
+  .archive-heading p:not(.eyebrow) { color: hsl(var(--muted-foreground)); line-height: 1.75; }
+  .collection-meta { margin-top: 1.5rem; color: hsl(var(--primary)); font: 0.72rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .collection-cover { max-width: 100%; height: auto; margin-top: 2rem; }
+  .collection-intro { margin-top: 2rem; }
+</style>

@@ -1,0 +1,18 @@
+---
+import { getCollection } from 'astro:content'
+import PageLayout from '@/layouts/BaseLayout.astro'
+import CollectionList from '@/components/collections/CollectionList.astro'
+import { site } from '@/site-config'
+
+const collections = await getCollection('collections')
+const meta = { title: 'Collections', description: site.collectionsIntro }
+---
+
+<PageLayout {meta}><main class='page-column archive-page'><header class='archive-heading'><p class='eyebrow'>Notebook / long threads</p><h1>Collections</h1><p>{site.collectionsIntro}</p></header><CollectionList {collections} /></main></PageLayout>
+
+<style>
+  .archive-page { padding-top: 4.5rem; }
+  .archive-heading { max-width: 42rem; margin-bottom: 3.5rem; }
+  .archive-heading h1 { margin: 0.75rem 0 1rem; font: 500 clamp(3rem, 7vw, 5.4rem)/1 Georgia, Georgia, serif; letter-spacing: -0.06em; }
+  .archive-heading p:last-child { color: hsl(var(--muted-foreground)); line-height: 1.75; }
+</style>

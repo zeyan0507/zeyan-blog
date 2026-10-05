@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Zeyan's Blog</title>
+  <desc id="desc">A quiet notebook for research, engineering, and learning.</desc>
+  <rect width="1200" height="630" fill="#fbfaf7"/>
+  <path d="M0 96h1200M0 534h1200" stroke="#d9d2c8"/>
+  <circle cx="104" cy="108" r="28" fill="#b75b22"/>
+  <path d="M92 96h24v6l-16 12h16v6H92v-6l16-12H92z" fill="#fffaf2"/>
+  <text x="104" y="350" fill="#202732" font-family="Georgia, Times New Roman, serif" font-size="92" letter-spacing="-4">Zeyan's Blog.</text>
+  <text x="108" y="420" fill="#657080" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24" letter-spacing="3">RESEARCH · SYSTEMS · NOTES</text>
+  <text x="108" y="570" fill="#657080" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">zeyan.dev</text>
+</svg>

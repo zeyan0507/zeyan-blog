@@ -1,0 +1,67 @@
+---
+import type { CollectionEntry } from 'astro:content'
+import { render } from 'astro:content'
+import { site } from '@/site-config'
+import { localizePath } from '@/utils/languages'
+
+interface Props { posts: CollectionEntry<'blog'>[]; compact?: boolean }
+const { posts, compact = false } = Astro.props
+const formatDate = (date: Date) => date.toISOString().slice(0, 10)
+const language = Astro.currentLocale === 'zh' || Astro.url.pathname.startsWith('/zh') ? 'zh-CN' : 'en-US'
+const isChinese = language.startsWith('zh')
+const categoryLabels: Record<string, string> = { research: '研究', technical: '技术', 'paper-reading': '论文阅读', 'learning-notes': '学习笔记', 'daily-life': '日常' }
+const renderedPosts = await Promise.all(
+  posts.map(async (post) => {
+    const { remarkPluginFrontmatter } = await render(post)
+    return { post, minutesRead: remarkPluginFrontmatter.minutesRead || 'Reading note' }
+  })
+)
+---
+
+<ul class:list={['post-list', { compact }]} aria-label='Blog posts'>
+  {renderedPosts.map(({ post, minutesRead }) => {
+    const { id, data } = post
+    return (
+      <li class='post-row' data-pagefind-weight='2'>
+        <div class='post-row-link'>
+          <time class='post-date' datetime={data.publishDate.toISOString()}>{formatDate(data.publishDate)}</time>
+          <div class='post-main'>
+            <a href={localizePath(`/blog/${id}`, language)} class='post-title-link' data-astro-prefetch><h2 class='post-title' lang={data.language}>{data.title}</h2></a>
+            {!compact && <p class='post-description'>{data.description}</p>}
+            <div class='post-meta'>
+              <span>{isChinese ? categoryLabels[data.category] : site.blogCategories.find((category) => category.slug === data.category)?.label}</span>
+              <span>{isChinese && minutesRead === 'Reading note' ? '阅读笔记' : minutesRead}</span>
+              {data.tags.length > 0 && <span class='post-tags'>{data.tags.slice(0, 3).map((tag, index) => <Fragment>{index > 0 && ' / '}<a href={localizePath(`/tags/${encodeURIComponent(tag)}`, language)}>{tag}</a></Fragment>)}</span>}
+            </div>
+          </div>
+          <a href={localizePath(`/blog/${id}`, language)} class='post-arrow' aria-label={`${isChinese ? '阅读' : 'Read'} ${data.title}`}>↗</a>
+        </div>
+      </li>
+    )
+  })}
+</ul>
+
+<style>
+  .post-list { display: flex; flex-direction: column; }
+  .post-row { border-top: 1px solid var(--rule); }
+  .post-row:last-child { border-bottom: 1px solid var(--rule); }
+  .post-row-link { display: grid; grid-template-columns: 7.2rem minmax(0, 1fr) 1.5rem; gap: 1rem; align-items: start; padding: 1.2rem 0 1.35rem; }
+  .post-title-link:hover .post-title { color: hsl(var(--primary)); }
+  .post-date, .post-meta { color: hsl(var(--muted-foreground)); font: 0.72rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .post-date { padding-top: 0.3rem; }
+  .post-title { margin: 0; font-size: 1.07rem; font-weight: 520; line-height: 1.35; transition: color 180ms ease; }
+  .post-description { max-width: 58ch; margin: 0.45rem 0 0; color: hsl(var(--muted-foreground)); font-size: 0.88rem; line-height: 1.65; }
+  .post-meta { display: flex; flex-wrap: wrap; gap: 0.55rem 1rem; margin-top: 0.75rem; }
+  .post-tags { color: hsl(var(--primary)); }
+  .post-arrow { padding-top: 0.1rem; color: hsl(var(--muted-foreground)); font-size: 1.2rem; transition: transform 180ms ease, color 180ms ease; }
+  .post-row-link:hover .post-arrow { color: hsl(var(--primary)); transform: translate(0.15rem, -0.15rem); }
+  .post-list.compact .post-row-link { padding-block: 0.75rem; }
+  .post-list.compact .post-title { font-size: 0.98rem; }
+  @media (max-width: 640px) {
+    .post-row-link { grid-template-columns: 1fr 1.25rem; gap: 0.35rem 0.75rem; padding-block: 1rem; }
+    .post-date { grid-column: 1 / -1; padding: 0; }
+    .post-main { grid-column: 1; min-width: 0; }
+    .post-arrow { grid-column: 2; grid-row: 2; }
+    .post-description { font-size: 0.84rem; }
+  }
+</style>

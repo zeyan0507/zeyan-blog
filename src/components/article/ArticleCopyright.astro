@@ -1,0 +1,34 @@
+---
+import type { CollectionEntry } from 'astro:content'
+import { Icon } from 'astro-pure/user'
+import { site } from '@/site-config'
+
+interface Props { data: CollectionEntry<'blog'>['data']; language?: string }
+const { data, language } = Astro.props
+const isChinese = language?.toLowerCase().startsWith('zh')
+---
+
+<section class='copyright-card' aria-label={isChinese ? '文章版权信息' : 'Article copyright information'}>
+  <Icon class='copyright-icon' name='copyright' />
+  <div><strong>{data.title}</strong><p>{Astro.url}</p></div>
+  <dl>
+    <div><dt>{isChinese ? '作者' : 'Author'}</dt><dd>{site.author}</dd></div>
+    <div><dt>{isChinese ? '发布日期' : 'Published'}</dt><dd>{data.publishDate.toLocaleDateString(isChinese ? 'zh-CN' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</dd></div>
+    <div><dt>{isChinese ? '许可协议' : 'License'}</dt><dd><a href='https://creativecommons.org/licenses/by-nc-sa/4.0/' target='_blank'>CC BY-NC-SA 4.0</a></dd></div>
+  </dl>
+  <button class='copy-link' type='button' data-copy-label={isChinese ? '链接已复制' : 'Link copied'} aria-label={isChinese ? '复制文章链接' : 'Copy article link'} title={isChinese ? '复制文章链接' : 'Copy article link'}><Icon name='link' class='size-5' /></button>
+</section>
+
+<script>
+  import { showToast } from 'astro-pure/utils'
+  document.querySelectorAll<HTMLButtonElement>('.copy-link').forEach((button) => {
+    button.addEventListener('click', async () => {
+      await navigator.clipboard.writeText(window.location.href)
+      showToast({ message: button.dataset.copyLabel || 'Link copied' })
+    })
+  })
+</script>
+
+<style>
+  .copyright-card{position:relative;display:grid;gap:1rem;padding:1rem;border:1px solid var(--rule);border-radius:.75rem;overflow:hidden}.copyright-icon{position:absolute;inset:.8rem .8rem auto auto;width:5rem;height:5rem;opacity:.08}.copyright-card strong{font-weight:500}.copyright-card p{margin:.2rem 0 0;color:hsl(var(--muted-foreground));font-size:.75rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.copyright-card dl{display:flex;flex-wrap:wrap;gap:1rem 2.5rem;margin:0}.copyright-card dl div{display:grid;gap:.2rem}.copyright-card dt{color:hsl(var(--muted-foreground));font-size:.72rem}.copyright-card dd{margin:0;font-size:.82rem}.copy-link{display:grid;place-items:center;width:2rem;height:2rem;border-radius:50%;color:hsl(var(--muted-foreground));background:hsl(var(--muted))}.copy-link:hover{color:hsl(var(--primary))}
+</style>

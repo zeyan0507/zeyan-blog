@@ -1,0 +1,9 @@
+---
+import { getCollection } from 'astro:content'
+import PageLayout from '@/layouts/BaseLayout.astro'
+const posts=(await getCollection('blog',({data})=>!data.draft&&data.language.toLowerCase().startsWith('zh'))).sort((a,b)=>b.data.publishDate.valueOf()-a.data.publishDate.valueOf())
+const years=posts.reduce((map,post)=>{const year=post.data.publishDate.getFullYear();map.set(year,[...(map.get(year)||[]),post]);return map},new Map<number,typeof posts>())
+const meta={title:'归档',description:'按年份浏览中文笔记。',language:'zh-CN'}
+---
+<PageLayout {meta}><main class='page-column archive-page'><header><p class='eyebrow'>笔记 / 时间线</p><h1>归档</h1><p>{meta.description}</p></header><div class='years'>{[...years.entries()].map(([year,items])=><section><div class='year'>{year}<small>{items.length} 篇</small></div><ul>{items.map(post=><li><a href={`/zh/blog/${post.id}`}><time>{post.data.publishDate.toISOString().slice(5,10)}</time><span>{post.data.title}</span><b>↗</b></a></li>)}</ul></section>)}</div></main></PageLayout>
+<style>.archive-page{padding-top:4.5rem}.archive-page header{max-width:42rem;margin-bottom:4rem}.archive-page h1{margin:.75rem 0 1rem;font:500 clamp(3rem,7vw,5.4rem)/1 Georgia,serif;letter-spacing:-.06em}.archive-page header p:last-child,.year small{color:hsl(var(--muted-foreground))}.years{display:grid;gap:4rem}.years section{display:grid;grid-template-columns:8rem 1fr;gap:2rem}.year{font:500 2rem Georgia,serif}.year small{display:block;margin-top:.6rem;font:.68rem ui-monospace,monospace}.years ul{border-top:1px solid var(--rule)}.years li{border-bottom:1px solid var(--rule)}.years a{display:grid;grid-template-columns:4rem 1fr 1rem;gap:1rem;padding:.8rem 0}.years time,.years b{color:hsl(var(--muted-foreground))}@media(max-width:640px){.years section{grid-template-columns:1fr;gap:1rem}}</style>

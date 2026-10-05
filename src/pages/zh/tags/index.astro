@@ -1,0 +1,10 @@
+---
+import { getCollection } from 'astro:content'
+import { getUniqueTagsWithCount } from 'astro-pure/server'
+import PageLayout from '@/layouts/BaseLayout.astro'
+const posts=await getCollection('blog',({data})=>!data.draft&&data.language.toLowerCase().startsWith('zh'))
+const tags=getUniqueTagsWithCount(posts)
+const meta={title:'标签',description:'按主题浏览笔记。',language:'zh-CN'}
+---
+<PageLayout {meta}><main class='page-column page'><header><p class='eyebrow'>笔记 / 索引</p><h1>标签</h1><p>沿着同一个概念，浏览研究、技术与学习笔记。</p></header><ul>{tags.map(([tag,count])=><li><a href={`/zh/tags/${encodeURIComponent(tag)}`}><span>#{tag}</span><small>{count} 篇</small><b>↗</b></a></li>)}</ul></main></PageLayout>
+<style>.page{padding-top:4.5rem}.page header{max-width:44rem;padding-bottom:3rem;border-bottom:1px solid var(--rule)}.page h1{margin:.75rem 0 1rem;font:500 clamp(3rem,7vw,5.4rem)/1 Georgia,serif;letter-spacing:-.06em}.page header p:last-child,.page small,.page b{color:hsl(var(--muted-foreground))}.page ul{display:grid;grid-template-columns:repeat(2,1fr);gap:0 3rem;margin-top:3.5rem;padding:0;list-style:none}.page li{border-top:1px solid var(--rule)}.page a{display:grid;grid-template-columns:1fr auto 1rem;gap:1rem;padding:.95rem 0}@media(max-width:640px){.page ul{grid-template-columns:1fr}}</style>

@@ -1,0 +1,37 @@
+---
+import { getCollection } from 'astro:content'
+import PageLayout from '@/layouts/BaseLayout.astro'
+
+const posts = (await getCollection('blog', ({ data }) => !data.draft)).sort(
+  (a, b) => b.data.publishDate.valueOf() - a.data.publishDate.valueOf()
+)
+const years = posts.reduce((groups, post) => {
+  const year = post.data.publishDate.getFullYear()
+  const group = groups.get(year) ?? []
+  group.push(post)
+  groups.set(year, group)
+  return groups
+}, new Map<number, typeof posts>())
+const yearGroups = [...years.entries()].sort(([a], [b]) => b - a)
+const meta = { title: 'Archives', description: 'A compact index of the notebook by year.' }
+---
+
+<PageLayout {meta}><main class='page-column archive-page'><header class='archive-heading'><p class='eyebrow'>Notebook / timeline</p><h1>Archives</h1><p>A compact index of everything published here, arranged by the year it entered the notebook.</p></header><div class='year-list'>{yearGroups.map(([year, yearPosts]) => <section><div class='year-label'>{year}<span>{yearPosts.length} posts</span></div><ul>{yearPosts.map((post) => <li><a href={`/blog/${post.id}`}><time datetime={post.data.publishDate.toISOString()}>{post.data.publishDate.toISOString().slice(5, 10)}</time><span>{post.data.title}</span><b>↗</b></a></li>)}</ul></section>)}</div></main></PageLayout>
+
+<style>
+  .archive-page { padding-top: 4.5rem; }
+  .archive-heading { max-width: 42rem; margin-bottom: 4rem; }
+  .archive-heading h1 { margin: 0.75rem 0 1rem; font: 500 clamp(3rem, 7vw, 5.4rem)/1 Georgia, Georgia, serif; letter-spacing: -0.06em; }
+  .archive-heading p:last-child { color: hsl(var(--muted-foreground)); line-height: 1.75; }
+  .year-list { display: grid; gap: 4rem; }
+  .year-list section { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: 2rem; }
+  .year-label { font: 500 2rem/1 Georgia, Georgia, serif; }
+  .year-label span { display: block; margin-top: 0.6rem; color: hsl(var(--muted-foreground)); font: 0.68rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .year-list ul { border-top: 1px solid var(--rule); }
+  .year-list li { border-bottom: 1px solid var(--rule); }
+  .year-list li a { display: grid; grid-template-columns: 4rem 1fr 1rem; gap: 1rem; padding: 0.8rem 0; align-items: center; }
+  .year-list time { color: hsl(var(--muted-foreground)); font: 0.72rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .year-list b { color: hsl(var(--muted-foreground)); font-weight: 400; }
+  .year-list a:hover b { color: hsl(var(--primary)); }
+  @media (max-width: 640px) { .archive-page { padding-top: 3rem; } .year-list section { grid-template-columns: 1fr; gap: 1rem; } .year-label { font-size: 1.65rem; } }
+</style>

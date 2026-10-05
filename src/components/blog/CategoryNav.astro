@@ -1,0 +1,19 @@
+---
+import { site } from '@/site-config'
+import { localizePath } from '@/utils/languages'
+interface Props { active?: string }
+const { active = 'all' } = Astro.props
+const language = Astro.currentLocale === 'zh' || Astro.url.pathname.startsWith('/zh') ? 'zh-CN' : 'en-US'
+const isChinese = language.startsWith('zh')
+const labels: Record<string, string> = { all: '全部', research: '研究', technical: '技术', 'paper-reading': '论文阅读', 'learning-notes': '学习笔记', 'daily-life': '日常' }
+---
+
+<nav class='category-nav' aria-label={isChinese ? '博客分类' : 'Blog categories'}>
+  {site.blogCategories.map((category) => <a href={localizePath(category.slug === 'all' ? '/blog/all' : `/blog/${category.slug}`, language)} class:list={{ active: active === category.slug }} aria-current={active === category.slug ? 'page' : undefined}>{isChinese ? labels[category.slug] : category.label}</a>)}
+</nav>
+
+<style>
+  .category-nav { display: flex; flex-wrap: wrap; gap: 0.65rem 1.1rem; margin-block: 1.75rem 2.25rem; font-size: 0.82rem; color: hsl(var(--muted-foreground)); }
+  .category-nav a { padding-bottom: 0.25rem; border-bottom: 1px solid transparent; }
+  .category-nav a:hover, .category-nav a.active { color: hsl(var(--foreground)); border-color: hsl(var(--primary)); }
+</style>

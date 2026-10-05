@@ -1,0 +1,111 @@
+---
+import { Icon } from 'astro-pure/user'
+import { site } from '@/site-config'
+import { localizePath } from '@/utils/languages'
+interface Props { language?: string; languageLinks?: { href: string; label: string; lang: string }[] }
+const { language, languageLinks = [] } = Astro.props
+const currentPath = Astro.url.pathname
+const isChinese = language?.toLowerCase().startsWith('zh')
+const navigation = isChinese ? site.navigationZh : site.navigation
+const homeHref = localizePath('/', language)
+const searchHref = localizePath('/search', language)
+---
+
+<header class='site-header relative z-50 flex min-w-0 items-center justify-between border-b border-transparent py-6 sm:py-8'>
+  <a href={homeHref} class='site-wordmark flex items-baseline gap-2 text-sm font-semibold tracking-[0.11em]' aria-label={site.title}>
+    <span class='wordmark-mark'>{site.monogram}</span><span>{site.shortTitle}</span>
+  </a>
+  <div class='flex items-center gap-4 sm:gap-6'>
+    <nav class='hidden items-center gap-5 text-[0.82rem] text-muted-foreground md:flex' aria-label={isChinese ? '主导航' : 'Primary navigation'}>
+      {navigation.map((item) => {
+        const href = localizePath(item.href, language)
+        const active = currentPath === href || currentPath.startsWith(`${href}/`)
+        return <a {href} class:list={['nav-link', { active }]} aria-current={active ? 'page' : undefined}>{item.label}</a>
+      })}
+    </nav>
+    <a href={searchHref} class='header-tool search-trigger' aria-label={isChinese ? '搜索' : 'Search'} title={`${isChinese ? '搜索' : 'Search'} · Ctrl/Cmd + K`}>
+      <Icon name='search' class='size-4' /><span class='hidden text-xs sm:inline'>{isChinese ? '搜索' : 'Search'}</span>
+    </a>
+    {languageLinks.map((link) => <a class='header-tool language-switch' href={link.href} lang={link.lang} hreflang={link.lang} aria-label={link.lang.startsWith('zh') ? '切换到中文' : 'Switch to English'} title={link.lang.startsWith('zh') ? '切换到中文' : 'Switch to English'}><Icon name='earth' class='size-4' /><span>{link.label}</span></a>)}
+    <button id='toggleDarkMode' class='header-tool' aria-label={isChinese ? '切换主题' : 'Toggle theme'} title={isChinese ? '切换主题' : 'Toggle theme'} data-label-dark={isChinese ? '切换到深色主题' : 'Switch to dark theme'} data-label-light={isChinese ? '切换到浅色主题' : 'Switch to light theme'}>
+      <Icon name='sun' class='theme-sun size-4' /><Icon name='moon' class='theme-moon size-4' />
+    </button>
+    <button id='toggleMenu' class='header-tool md:hidden' aria-label={isChinese ? '打开菜单' : 'Open menu'} aria-expanded='false' aria-controls='mobileMenu' data-label-open={isChinese ? '打开菜单' : 'Open menu'} data-label-close={isChinese ? '关闭菜单' : 'Close menu'}>
+      <Icon name='menu' class='size-4' /><span class='sr-only'>{isChinese ? '菜单' : 'Menu'}</span>
+    </button>
+  </div>
+  <nav id='mobileMenu' class='mobile-menu absolute inset-x-0 top-full hidden border-y border-[var(--rule)] bg-background py-4 md:hidden' aria-label={isChinese ? '移动端导航' : 'Mobile navigation'}>
+    {navigation.map((item) => {
+      const href = localizePath(item.href, language)
+      const active = currentPath === href || currentPath.startsWith(`${href}/`)
+      return <a {href} class:list={['block py-2 text-sm', { active }]} aria-current={active ? 'page' : undefined}>{item.label}</a>
+    })}
+  </nav>
+</header>
+
+<script>
+  import { setTheme } from 'astro-pure/utils'
+  const toggle = document.querySelector('#toggleDarkMode')
+  toggle?.addEventListener('click', () => setTheme(undefined, true))
+  const updateThemeLabel = () => {
+    const dark = document.documentElement.classList.contains('dark')
+    const label = dark ? (toggle as HTMLElement)?.dataset.labelLight : (toggle as HTMLElement)?.dataset.labelDark
+    if (label) {
+      toggle?.setAttribute('aria-label', label)
+      toggle?.setAttribute('title', label)
+    }
+  }
+  updateThemeLabel()
+  new MutationObserver(updateThemeLabel).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+  const menuButton = document.querySelector('#toggleMenu')
+  const mobileMenu = document.querySelector('#mobileMenu')
+  menuButton?.addEventListener('click', () => {
+    const isOpen = !mobileMenu?.classList.contains('hidden')
+    mobileMenu?.classList.toggle('hidden', isOpen)
+    menuButton.setAttribute('aria-expanded', String(!isOpen))
+    const label = isOpen ? (menuButton as HTMLElement).dataset.labelOpen : (menuButton as HTMLElement).dataset.labelClose
+    if (label) menuButton.setAttribute('aria-label', label)
+  })
+  const openSearch = () => {
+    const dialog = document.querySelector<HTMLDialogElement>('#search-dialog')
+    if (dialog) {
+      dialog.showModal()
+      dialog.querySelector('notebook-search')?.dispatchEvent(new Event('search:open'))
+    } else document.querySelector<HTMLInputElement>('notebook-search input')?.focus()
+  }
+  document.querySelector('.search-trigger')?.addEventListener('click', (event) => {
+    if (document.querySelector('#search-dialog')) { event.preventDefault(); openSearch() }
+  })
+  document.addEventListener('keydown', (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault()
+      openSearch()
+    }
+    if (event.key === 'Escape' && menuButton?.getAttribute('aria-expanded') === 'true') {
+      mobileMenu?.classList.add('hidden')
+      menuButton.setAttribute('aria-expanded', 'false')
+      const label = (menuButton as HTMLElement).dataset.labelOpen
+      if (label) menuButton.setAttribute('aria-label', label)
+      ;(menuButton as HTMLButtonElement).focus()
+    }
+  })
+</script>
+
+<style>
+  .site-header { transition: border-color 180ms ease, background 180ms ease; }
+  .site-wordmark { color: hsl(var(--foreground)); }
+  .wordmark-mark { display: inline-grid; place-items: center; width: 1.35rem; height: 1.35rem; color: hsl(var(--background)); background: hsl(var(--primary)); border-radius: 50%; font-family: Georgia, serif; font-size: 0.9rem; letter-spacing: 0; }
+  .nav-link { position: relative; padding-block: 0.25rem; }
+  .nav-link::after { content: ''; position: absolute; left: 0; right: 100%; bottom: -0.25rem; height: 1px; background: hsl(var(--primary)); transition: right 180ms ease; }
+  .nav-link:hover, .nav-link.active { color: hsl(var(--foreground)); }
+  .nav-link.active::after, .nav-link:hover::after { right: 0; }
+  .header-tool { display: inline-flex; align-items: center; gap: 0.35rem; color: hsl(var(--muted-foreground)); }
+  .header-tool:where(button) { min-width: 2rem; min-height: 2rem; justify-content: center; }
+  .language-switch { min-height: 2rem; padding: 0.4rem 0.65rem; border: 1px solid var(--rule); border-radius: 0.45rem; font-size: 0.76rem; white-space: nowrap; }
+  .language-switch:hover { border-color: hsl(var(--primary) / 0.45); }
+  .theme-sun { display: none; }
+  :global(.dark) .theme-sun { display: block; }
+  :global(.dark) .theme-moon { display: none; }
+  .header-tool:hover { color: hsl(var(--primary)); }
+  .mobile-menu a:hover, .mobile-menu a.active { color: hsl(var(--primary)); }
+</style>

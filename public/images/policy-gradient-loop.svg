@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="300" viewBox="0 0 900 300" role="img" aria-labelledby="title desc">
+  <title id="title">A policy-gradient learning loop</title><desc id="desc">Policy samples actions, environment provides rewards, and the estimator updates the policy.</desc>
+  <rect width="900" height="300" fill="#fcfbf8"/>
+  <g fill="none" stroke="#dcd8d0"><rect x="60" y="95" width="200" height="100"/><rect x="350" y="95" width="200" height="100"/><rect x="640" y="95" width="200" height="100"/></g>
+  <g stroke="#ba6420" stroke-width="2" fill="none"><path d="M260 145h90m-8-6 8 6-8 6M550 145h90m-8-6 8 6-8 6M740 195v50H160v-50m-6 8 6-8 6 8"/></g>
+  <g font-family="sans-serif" font-size="21" fill="#20232d" text-anchor="middle"><text x="160" y="151">Policy</text><text x="450" y="151">Environment</text><text x="740" y="151">Estimator</text></g>
+  <g font-family="sans-serif" font-size="15" fill="#686c75" text-anchor="middle"><text x="305" y="123">action</text><text x="595" y="123">reward</text><text x="450" y="272">update from evidence</text></g>
+</svg>

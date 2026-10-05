@@ -1,0 +1,38 @@
+---
+import { getCollection } from 'astro:content'
+import PageLayout from '@/layouts/BaseLayout.astro'
+import CollectionList from '@/components/collections/CollectionList.astro'
+import PostList from '@/components/blog/PostList.astro'
+import { site } from '@/site-config'
+
+const collections = await getCollection('collections')
+const posts = (await getCollection('blog', ({ data }) => !data.draft && !data.language.toLowerCase().startsWith('zh') && data.category !== 'research')).sort(
+  (a, b) => b.data.publishDate.valueOf() - a.data.publishDate.valueOf()
+)
+const meta = { title: 'Notes', description: 'Learning notes, paper reading, and practical records from the notebook.' }
+---
+
+<PageLayout {meta}>
+  <main class='page-column notes-page'>
+    <header class='notes-heading'>
+      <p class='eyebrow'>Notes / working knowledge</p>
+      <h1>Notes</h1>
+      <p>{meta.description}</p>
+    </header>
+    <section class='notes-section'><div class='section-heading'><div><p class='eyebrow'>01 / Long threads</p><h2>Collections</h2></div><a href='/collections'>Open index →</a></div><p class='section-copy'>{site.collectionsIntro}</p><CollectionList {collections} /></section>
+    <section class='notes-section'><div class='section-heading'><div><p class='eyebrow'>02 / Latest notes</p><h2>Recent writing</h2></div><a href='/blog/all'>All posts →</a></div><PostList {posts} /></section>
+  </main>
+</PageLayout>
+
+<style>
+  .notes-page { padding-top: 4.5rem; }
+  .notes-heading { max-width: 44rem; padding-bottom: 3rem; border-bottom: 1px solid var(--rule); }
+  .notes-heading h1 { margin: 0.7rem 0 1rem; font: 500 clamp(3rem, 7vw, 5.4rem)/1 Georgia, 'Times New Roman', serif; letter-spacing: -0.06em; }
+  .notes-heading p:last-child { max-width: 38rem; margin: 0; color: hsl(var(--muted-foreground)); font-size: 1rem; line-height: 1.8; }
+  .notes-section { margin-top: 4.5rem; }
+  .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+  h2 { margin: 0.55rem 0 0; font-size: 1.35rem; font-weight: 500; }
+  .section-heading > a { color: hsl(var(--muted-foreground)); font-size: 0.78rem; }
+  .section-copy { max-width: 40rem; margin: 0 0 1.5rem; color: hsl(var(--muted-foreground)); font-size: 0.9rem; line-height: 1.7; }
+  @media (max-width: 640px) { .notes-page { padding-top: 3rem; } .section-heading { align-items: start; flex-direction: column; } }
+</style>

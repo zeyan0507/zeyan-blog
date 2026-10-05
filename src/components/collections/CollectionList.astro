@@ -1,0 +1,28 @@
+---
+import type { CollectionEntry } from 'astro:content'
+import { getCollection } from 'astro:content'
+import { collectionPosts } from '@/utils/collections'
+import { localizePath } from '@/utils/languages'
+interface Props { collections: CollectionEntry<'collections'>[]; limit?: number }
+const { collections, limit } = Astro.props
+const visible = limit ? collections.slice(0, limit) : collections
+const posts = await getCollection('blog', ({ data }) => !data.draft)
+const language = Astro.currentLocale === 'zh' || Astro.url.pathname.startsWith('/zh') ? 'zh-CN' : 'en-US'
+const isChinese = language.startsWith('zh')
+const localizedPosts = posts.filter((post) => post.data.language.toLowerCase().startsWith('zh') === isChinese)
+---
+
+<ul class='collection-list'>
+  {visible.map((collection) => <li><a href={localizePath(`/collections/${collection.id}`, language)}><span class='collection-name'>{isChinese ? collection.data.titleZh || collection.data.title : collection.data.title}</span><span class='collection-description'>{isChinese ? collection.data.descriptionZh || collection.data.description : collection.data.description}</span><span class='collection-count'>{collectionPosts(collection, localizedPosts).length} {isChinese ? '篇笔记' : 'notes'} ↗</span></a></li>)}
+</ul>
+
+<style>
+  .collection-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 2.5rem; }
+  .collection-list li { border-top: 1px solid var(--rule); }
+  .collection-list li:last-child, .collection-list li:nth-last-child(2) { border-bottom: 1px solid var(--rule); }
+  .collection-list a { display: grid; gap: 0.35rem; padding: 1rem 0 1.1rem; }
+  .collection-name { font-size: 1rem; font-weight: 540; }
+  .collection-description { color: hsl(var(--muted-foreground)); font-size: 0.84rem; line-height: 1.6; }
+  .collection-count { color: hsl(var(--primary)); font: 0.7rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+  @media (max-width: 640px) { .collection-list { grid-template-columns: 1fr; } .collection-list li:nth-last-child(2) { border-bottom: 0; } }
+</style>

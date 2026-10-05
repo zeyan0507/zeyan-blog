@@ -1,0 +1,42 @@
+---
+interface Props { defaultTheme?: string; lightColor?: string; darkColor?: string }
+const { defaultTheme = 'system', lightColor = '#fcfbf8', darkColor = '#13161b' } = Astro.props
+---
+
+{/* Use inline mode to quick load color, which can avoid splash */}
+<script is:inline define:vars={{ defaultTheme, lightColor, darkColor }}>
+  function simpleSetTheme() {
+    let theme = defaultTheme
+    try { theme = localStorage.getItem('theme') || defaultTheme } catch {}
+    // If undefined or 'system', get from system
+    if (!theme || theme === 'system') {
+      theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    }
+    document.documentElement.classList.toggle('dark', theme === 'dark')
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute('content', theme === 'dark' ? darkColor : lightColor)
+  }
+  simpleSetTheme()
+  document.addEventListener('astro:page-load', () => simpleSetTheme())
+</script>
+
+<script>
+  import { Icons } from '../../libs/icons'
+  import { listenThemeChange } from '../../utils'
+
+  // Listen for theme change event
+  listenThemeChange()
+  // Listen for toast event
+  document.addEventListener('toast', (e) => {
+    const { message, time } = (e as CustomEvent).detail
+    const toast = document.createElement('div')
+    toast.className =
+      'animate fixed bottom-8 z-20 px-4 py-2 bg-muted text-foreground rounded-lg border shadow-lg flex items-center gap-2'
+    toast.innerHTML = `<svg width='22' height='22' viewBox='0 0 24 24' fill='currentColor'>${Icons.info}</svg> <span>${message}</span>`
+    document.body.appendChild(toast)
+    setTimeout(() => {
+      toast.remove()
+    }, time || 3000)
+  })
+</script>

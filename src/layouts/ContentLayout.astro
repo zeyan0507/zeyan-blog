@@ -1,0 +1,37 @@
+---
+import type { SiteMeta } from 'astro-pure/types'
+import { BackToTop } from 'astro-pure/components/pages'
+import { Button } from 'astro-pure/user'
+import PageLayout from '@/layouts/BaseLayout.astro'
+import { integ } from '@/site-config'
+
+interface Props { meta: SiteMeta; highlightColor?: string; back?: string; languageLinks?: { href: string; label: string; lang: string }[] }
+const { meta, highlightColor, back = '/', languageLinks, ...props } = Astro.props
+const isChinese = meta.language?.toLowerCase().startsWith('zh')
+---
+
+<PageLayout {meta} {highlightColor} {languageLinks} {...props}>
+  <main class='content-layout page-column'>
+    <Button title={isChinese ? '返回' : 'Back'} href={back} variant='back' />
+    <div class='content-layout-grid'>
+      <article data-pagefind-body>
+        <header id='content-header' class='animate'><slot name='header' /></header>
+        <div id='content' class:list={['article-content animate', integ.typography.class]}><slot /></div>
+      </article>
+      <aside id='sidebar' class='article-sidebar animate'><slot name='sidebar' /></aside>
+    </div>
+  </main>
+  <div class='page-bottom page-column'><slot name='bottom' /><slot name='bottom-sidebar' /></div>
+  <BackToTop header='content-header' content='content' />
+</PageLayout>
+
+<style>
+  .content-layout { padding-top: 2.5rem; }
+  .content-layout-grid { display: grid; grid-template-columns: minmax(0, 51rem) 13rem; gap: 4rem; margin-top: 3.5rem; }
+  .content-layout-grid article { min-width: 0; }
+  .article-content { margin-top: 3rem; }
+  .article-sidebar { position: sticky; top: 2rem; align-self: start; max-height: calc(100vh - 4rem); overflow-y: auto; }
+  .page-bottom { margin-top: 3rem; }
+  @media (max-width: 900px) { .content-layout-grid { grid-template-columns: minmax(0, 1fr); gap: 2rem; } .article-sidebar { position: static; grid-row: 1; max-height: none; overflow: visible; } .article-sidebar:empty { display: none; } }
+  @media (max-width: 640px) { .content-layout { padding-top: 1.5rem; } .content-layout-grid { margin-top: 2.5rem; } .article-content { margin-top: 2.25rem; } }
+</style>

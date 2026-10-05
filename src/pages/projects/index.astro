@@ -1,0 +1,78 @@
+---
+import PageLayout from '@/layouts/BaseLayout.astro'
+import { site } from '@/site-config'
+
+const meta = {
+  title: 'Projects',
+  description: 'Small systems, experiments, and tools that support the work in this notebook.'
+}
+---
+
+<PageLayout {meta}>
+  <main class='page-column projects-page'>
+    <header class='projects-heading'>
+      <p class='eyebrow'>Projects / workbench</p>
+      <h1>Things I am<br /><em>building.</em></h1>
+      <p>{meta.description}</p>
+    </header>
+
+    <section class='project-list' aria-label='Projects'>
+      {site.projects.map((project, index) => (
+        <article class='project-row'>
+          <span class='project-index'>0{index + 1}</span>
+          <div class='project-main'>
+            <div class='project-title-line'>
+              <h2>{project.name}</h2>
+              <span class='project-status'>{project.status}</span>
+            </div>
+            <p>{project.description}</p>
+            <div class='project-meta'><span>{project.stack}</span><span>{project.year}</span></div>
+            <div class='project-resources'>
+              {project.github && <a href={project.github} target='_blank' rel='noreferrer'>GitHub ↗</a>}
+              {project.demo && <a href={project.demo} target='_blank' rel='noreferrer'>Demo ↗</a>}
+              {project.related.map((id) => <a href={`/blog/${id}`}>Related note →</a>)}
+            </div>
+          </div>
+          {project.href && <a class='project-link' href={project.href} target='_blank' rel='noreferrer'>View project <span>↗</span></a>}
+        </article>
+      ))}
+    </section>
+
+    <section class='projects-note'>
+      <p class='eyebrow'>A note on unfinished work</p>
+      <p>
+        Most projects here are deliberately small. The useful measure is not how polished they
+        look, but whether they make a question easier to ask, an experiment easier to repeat, or a
+        result easier to inspect.
+      </p>
+    </section>
+  </main>
+</PageLayout>
+
+<style>
+  .projects-page { padding-top: 4.5rem; }
+  .projects-heading { max-width: 47rem; padding-bottom: 4rem; border-bottom: 1px solid var(--rule); }
+  .projects-heading h1 { margin: 0.75rem 0 1.25rem; font: 500 clamp(3rem, 7vw, 5.8rem)/0.98 Georgia, 'Times New Roman', serif; letter-spacing: -0.065em; }
+  .projects-heading h1 em { color: hsl(var(--primary)); font-style: normal; }
+  .projects-heading > p:last-child { max-width: 38rem; margin: 0; color: hsl(var(--muted-foreground)); font-size: 1.05rem; line-height: 1.85; }
+  .project-list { display: grid; }
+  .project-row { display: grid; grid-template-columns: 2rem minmax(0, 1fr) auto; gap: 1.5rem; align-items: start; padding: 1.65rem 0 1.8rem; border-bottom: 1px solid var(--rule); }
+  .project-index { padding-top: 0.25rem; color: hsl(var(--primary)); font: 0.7rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .project-title-line { display: flex; flex-wrap: wrap; gap: 0.75rem 1rem; align-items: baseline; }
+  .project-title-line h2 { margin: 0; font-size: 1.15rem; font-weight: 540; }
+  .project-status { color: hsl(var(--muted-foreground)); font: 0.68rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .project-main > p { max-width: 45rem; margin: 0.55rem 0 0; color: hsl(var(--muted-foreground)); font-size: 0.9rem; line-height: 1.7; }
+  .project-meta { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; margin-top: 0.9rem; color: hsl(var(--muted-foreground)); font: 0.68rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .project-link { padding-top: 0.2rem; color: hsl(var(--primary)); font-size: 0.78rem; white-space: nowrap; }
+  .project-link span { margin-left: 0.2rem; }
+  .project-resources { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 0.85rem; color: hsl(var(--primary)); font-size: 0.78rem; }
+  .projects-note { display: grid; grid-template-columns: 1fr 2fr; gap: 4rem; margin-top: 4rem; padding-top: 1.2rem; border-top: 1px solid var(--rule); }
+  .projects-note p:last-child { max-width: 42rem; margin: 0; color: hsl(var(--muted-foreground)); font-size: 0.92rem; line-height: 1.8; }
+  @media (max-width: 700px) {
+    .projects-page { padding-top: 3rem; }
+    .projects-heading { padding-bottom: 3rem; }
+    .project-row { grid-template-columns: 1.6rem minmax(0, 1fr); gap: 0.8rem; }
+    .project-link { grid-column: 2; padding-top: 0; }
+    .projects-note { grid-template-columns: 1fr; gap: 1.25rem; margin-top: 3rem; }
+  }
+</style>

@@ -1,0 +1,19 @@
+---
+import { getCollection,type CollectionEntry } from 'astro:content'
+import PageLayout from '@/layouts/BaseLayout.astro'
+import PostList from '@/components/blog/PostList.astro'
+import { collectionPosts } from '@/utils/collections'
+export const prerender=true
+export async function getStaticPaths(){const collections=await getCollection('collections');return collections.map(collection=>({params:{slug:collection.id},props:{collection}}))}
+interface Props{collection:CollectionEntry<'collections'>}
+const {collection}=Astro.props
+const allPosts=await getCollection('blog',({data})=>!data.draft&&data.language.toLowerCase().startsWith('zh'))
+const posts=collectionPosts(collection,allPosts)
+const title=collection.data.titleZh||collection.data.title
+const description=collection.data.descriptionZh||collection.data.description
+const meta={title,description,language:'zh-CN'}
+const statusMap: Record<string,string> = { Active: '进行中', Exploring: '探索中', Complete: '已完成' }
+const status = statusMap[collection.data.status] || collection.data.status
+---
+<PageLayout {meta}><main class='page-column page'><a class='back' href='/zh/collections'>← 全部专题</a><header><p class='eyebrow'>专题 / {status}</p><h1>{title}</h1><p>{description}</p><div class='meta'>{collection.data.started.toISOString().slice(0,10)} 开始 · {posts.length} 篇笔记</div>{collection.data.introZh && <p class='prose intro'>{collection.data.introZh}</p>}</header>{posts.length?<PostList {posts}/>:<p>该专题的中文笔记正在整理中。</p>}</main></PageLayout>
+<style>.page{padding-top:3rem}.back{color:hsl(var(--muted-foreground));font-size:.8rem}.page header{max-width:45rem;margin:3.5rem 0}.page h1{margin:.75rem 0 1rem;font:500 clamp(2.8rem,6vw,5rem)/1.05 Georgia,serif;letter-spacing:-.06em}.page header>p{color:hsl(var(--muted-foreground));line-height:1.75}.meta{color:hsl(var(--primary));font:.72rem ui-monospace,monospace}.intro{margin-top:2rem}</style>

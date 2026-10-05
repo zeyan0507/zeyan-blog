@@ -1,0 +1,11 @@
+---
+interface Props { type?: 'note' | 'tip' | 'warning' | 'important' | 'definition' | 'theorem' | 'intuition'; title?: string }
+const { type = 'note', title = type[0].toUpperCase() + type.slice(1) } = Astro.props
+---
+<aside class='callout' aria-label={title}><p class='callout-title'>{title}</p><div><slot /></div></aside>
+<style>
+  .callout { margin-block: 1.5rem; border-inline-start: 2px solid hsl(var(--primary)); padding: 0.8rem 1.1rem; background: hsl(var(--muted) / 0.7); }
+  .callout-title { margin: 0 0 0.45rem !important; font: 600 0.75rem ui-monospace, monospace; color: hsl(var(--primary)); letter-spacing: 0.04em; }
+  .callout :global(p:last-child) { margin-bottom: 0; }
+  .callout :global(p:first-child) { margin-top: 0; }
+</style>

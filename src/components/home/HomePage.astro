@@ -1,0 +1,122 @@
+---
+import type { CollectionEntry } from 'astro:content'
+import CollectionList from '@/components/collections/CollectionList.astro'
+import PostList from '@/components/blog/PostList.astro'
+import { site } from '@/site-config'
+import { localizePath } from '@/utils/languages'
+
+interface Props {
+  language: string
+  posts: CollectionEntry<'blog'>[]
+  collections: CollectionEntry<'collections'>[]
+}
+
+const { language, posts, collections } = Astro.props
+const isChinese = language.toLowerCase().startsWith('zh')
+const featuredPosts = posts.filter((post) => post.data.featured)
+const featured = (featuredPosts.length > 0 ? featuredPosts : posts).slice(0, 2)
+const recent = posts.slice(0, 4)
+const href = (path: string) => localizePath(path, language)
+
+const copy = isChinese ? {
+  eyebrow: `个人研究笔记 · ${site.established}`,
+  description: '一本安静的公开笔记，记录研究、工程、论文阅读，以及那些以后会变得有用的小想法。',
+  researchEyebrow: '01 / 近期工作',
+  researchTitle: '精选研究',
+  researchLink: '研究索引 →',
+  focusEyebrow: '02 / 正在关注',
+  focusTitle: '近期文章',
+  focusLink: '全部文章 →',
+  notesEyebrow: '03 / 笔记本',
+  notesTitle: '最新笔记',
+  notesLink: '浏览归档 →',
+  collectionsEyebrow: '04 / 长期主题',
+  collectionsTitle: '专题集',
+  collectionsLink: '查看全部 →',
+  empty: '中文笔记正在整理中。',
+  topics: [
+    ['策略优化', '理解使学习信号真正有用的假设。'],
+    ['科学反问题', '让模型尊重问题结构，而不是将它隐藏。'],
+    ['研究工具', '让从想法到证据的路径更容易检查。']
+  ]
+} : {
+  eyebrow: `Personal research notebook · ${site.established}`,
+  description: site.description,
+  researchEyebrow: '01 / Recent work',
+  researchTitle: 'Selected research',
+  researchLink: 'Research index →',
+  focusEyebrow: '02 / In focus',
+  focusTitle: 'Recent posts',
+  focusLink: 'All posts →',
+  notesEyebrow: '03 / Notebook',
+  notesTitle: 'Latest notes',
+  notesLink: 'Browse archive →',
+  collectionsEyebrow: '04 / Long threads',
+  collectionsTitle: 'Collections',
+  collectionsLink: 'View all →',
+  empty: 'Notes are being prepared.',
+  topics: site.research.topics
+}
+---
+
+<main class='page-column'>
+  <section class='home-intro animate' id='content-header'>
+    <div>
+      <p class='eyebrow'>{copy.eyebrow}</p>
+      <h1>{site.author}<span class='period'>.</span></h1>
+      <p class='home-lede'>{copy.description}</p>
+      <div class='home-links'>
+        {site.social.github && <a href={site.social.github}>GitHub ↗</a>}
+        {site.social.scholar && <a href={site.social.scholar}>Scholar ↗</a>}
+        {site.social.email && <a href={site.social.email}>Email ↗</a>}
+      </div>
+    </div>
+    <div class='intro-index' aria-hidden='true'><span>01</span><span>EST.</span><span>{site.established}</span></div>
+  </section>
+
+  <section class='home-section animate' id='content'>
+    <div class='section-heading'><div><p class='eyebrow'>{copy.researchEyebrow}</p><h2>{copy.researchTitle}</h2></div><a href={href('/research')}>{copy.researchLink}</a></div>
+    <div class='research-note-grid'>
+      {copy.topics.map(([title, description], index) => <a class='research-note' href={href('/research')}><span class='note-number'>0{index + 1}</span><strong>{title}</strong><p>{description}</p></a>)}
+    </div>
+  </section>
+
+  <section class='home-section animate'>
+    <div class='section-heading'><div><p class='eyebrow'>{copy.focusEyebrow}</p><h2>{copy.focusTitle}</h2></div><a href={href('/blog/all')}>{copy.focusLink}</a></div>
+    {featured.length > 0 ? <PostList posts={featured} compact /> : <p class='empty-state'>{copy.empty}</p>}
+  </section>
+
+  <section class='home-section animate'>
+    <div class='section-heading'><div><p class='eyebrow'>{copy.notesEyebrow}</p><h2>{copy.notesTitle}</h2></div><a href={href('/blog/all')}>{copy.notesLink}</a></div>
+    {recent.length > 0 ? <PostList posts={recent} compact /> : <p class='empty-state'>{copy.empty}</p>}
+  </section>
+
+  <section class='home-section animate'>
+    <div class='section-heading'><div><p class='eyebrow'>{copy.collectionsEyebrow}</p><h2>{copy.collectionsTitle}</h2></div><a href={href('/collections')}>{copy.collectionsLink}</a></div>
+    <CollectionList collections={collections} limit={3} />
+  </section>
+</main>
+
+<style>
+  .home-intro { display: grid; grid-template-columns: 1fr 7rem; gap: 2rem; align-items: end; padding: 5.5rem 0 5rem; border-bottom: 1px solid var(--rule); }
+  .home-intro h1 { margin: 0.9rem 0 1rem; font: 500 clamp(3.2rem, 8vw, 6.8rem)/0.95 Georgia, 'Times New Roman', serif; letter-spacing: -0.065em; }
+  .period { color: hsl(var(--primary)); }
+  .home-lede { max-width: 38rem; color: hsl(var(--muted-foreground)); font-size: 1.05rem; line-height: 1.8; }
+  .home-links { display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; margin-top: 1.75rem; font-size: 0.82rem; }
+  .home-links a { text-underline-offset: 0.25rem; }
+  .intro-index { display: grid; gap: 0.3rem; padding-left: 1rem; border-left: 1px solid hsl(var(--primary) / 0.45); color: hsl(var(--muted-foreground)); font: 0.68rem ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.1em; }
+  .intro-index span:first-child { color: hsl(var(--primary)); font-size: 1.4rem; }
+  .home-section { margin-top: 5rem; }
+  .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1.7rem; }
+  .section-heading h2 { margin: 0.55rem 0 0; font-size: 1.35rem; font-weight: 500; }
+  .section-heading > a { color: hsl(var(--muted-foreground)); font-size: 0.78rem; }
+  .section-heading > a:hover { color: hsl(var(--primary)); }
+  .research-note-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2rem; }
+  .research-note { display: grid; align-content: start; gap: 0.55rem; padding-top: 0.85rem; border-top: 1px solid var(--rule); }
+  .research-note:hover strong { color: hsl(var(--primary)); }
+  .note-number { color: hsl(var(--primary)); font: 0.7rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .research-note strong { font-size: 1rem; font-weight: 540; transition: color 180ms ease; }
+  .research-note p { margin: 0; color: hsl(var(--muted-foreground)); font-size: 0.85rem; line-height: 1.65; }
+  .empty-state { padding: 2rem 0; border-block: 1px solid var(--rule); color: hsl(var(--muted-foreground)); }
+  @media (max-width: 640px) { .home-intro { grid-template-columns: 1fr; padding-block: 3.5rem 3rem; } .intro-index { display: none; } .home-section { margin-top: 3.5rem; } .section-heading { align-items: start; flex-direction: column; } .research-note-grid { grid-template-columns: 1fr; gap: 1.25rem; } }
+</style>

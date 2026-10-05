@@ -1,0 +1,54 @@
+---
+import { getCollection } from 'astro:content'
+import PageLayout from '@/layouts/BaseLayout.astro'
+import PostList from '@/components/blog/PostList.astro'
+import { site } from '@/site-config'
+
+const posts = (await getCollection('blog', ({ data }) => !data.draft && !data.language.toLowerCase().startsWith('zh') && data.category === 'research')).sort(
+  (a, b) => b.data.publishDate.valueOf() - a.data.publishDate.valueOf()
+)
+const meta = { title: 'Research', description: site.research.description }
+const paperPosts = (await getCollection('blog', ({ data }) => !data.draft && !data.language.toLowerCase().startsWith('zh') && data.category === 'paper-reading')).sort((first, second) => second.data.publishDate.valueOf() - first.data.publishDate.valueOf())
+---
+
+<PageLayout {meta}>
+  <main class='page-column research-page'>
+    <header class='research-heading'>
+      <p class='eyebrow'>Research / questions in progress</p>
+      <h1>Research</h1>
+      <p>{site.research.description}</p>
+    </header>
+    <section class='research-interests' aria-labelledby='interests-title'>
+      <div><p class='eyebrow'>01 / Areas</p><h2 id='interests-title'>What I keep returning to</h2></div>
+      <ul>{site.research.interests.map((interest) => <li>{interest}</li>)}</ul>
+    </section>
+    <section class='research-topics' aria-labelledby='topics-title'>
+      <div class='section-heading'><div><p class='eyebrow'>02 / Working questions</p><h2 id='topics-title'>Current threads</h2></div><span>{site.research.topics.length} topics</span></div>
+      <div class='topic-grid'>{site.research.topics.map(([title, description], index) => <article><span>0{index + 1}</span><h3>{title}</h3><p>{description}</p></article>)}</div>
+    </section>
+    {posts.length > 0 && <section class='research-posts' aria-labelledby='posts-title'><div class='section-heading'><div><p class='eyebrow'>03 / Published notes</p><h2 id='posts-title'>Research notes</h2></div><a href='/blog/research'>View all →</a></div><PostList {posts} /></section>}
+    <section class='research-posts' aria-labelledby='papers-title'><div class='section-heading'><div><p class='eyebrow'>04 / Reading</p><h2 id='papers-title'>Paper reading</h2></div><a href='/collections/paper-reading'>Reading collection →</a></div><PostList posts={paperPosts} compact /></section>
+    <section class='research-topics' aria-labelledby='experiments-title'><div class='section-heading'><div><p class='eyebrow'>05 / Work in progress</p><h2 id='experiments-title'>Experiments</h2></div></div><div class='topic-grid'>{site.research.experiments.map((experiment) => <article><span>{experiment.status}</span><h3>{experiment.title}</h3><p>{experiment.description}</p></article>)}</div></section>
+    <section class='research-topics' aria-labelledby='projects-title'><div class='section-heading'><div><p class='eyebrow'>06 / Workbench</p><h2 id='projects-title'>Selected projects</h2></div><a href='/projects'>Project index →</a></div><div class='topic-grid'>{site.projects.slice(0, 2).map((project) => <article><span>{project.status}</span><h3><a href='/projects'>{project.name}</a></h3><p>{project.description}</p></article>)}</div></section>
+  </main>
+</PageLayout>
+
+<style>
+  .research-page { padding-top: 4.5rem; }
+  .research-heading { max-width: 46rem; padding-bottom: 3rem; border-bottom: 1px solid var(--rule); }
+  .research-heading h1 { margin: 0.7rem 0 1rem; font: 500 clamp(3rem, 7vw, 5.4rem)/1 Georgia, 'Times New Roman', serif; letter-spacing: -0.06em; }
+  .research-heading p:last-child { max-width: 40rem; margin: 0; color: hsl(var(--muted-foreground)); font-size: 1rem; line-height: 1.8; }
+  .research-interests, .research-topics, .research-posts { margin-top: 4.5rem; }
+  .research-interests { display: grid; grid-template-columns: 1fr 2fr; gap: 4rem; }
+  h2 { margin: 0.55rem 0 0; font-size: 1.35rem; font-weight: 500; }
+  .research-interests ul { display: flex; flex-wrap: wrap; align-content: start; gap: 0.6rem 1.4rem; margin: 0; padding: 0; list-style: none; }
+  .research-interests li { padding-bottom: 0.35rem; border-bottom: 1px solid var(--rule); font-size: 0.95rem; }
+  .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1.7rem; }
+  .section-heading > span, .section-heading > a { color: hsl(var(--muted-foreground)); font: 0.72rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .topic-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2rem; }
+  .topic-grid article { padding-top: 0.9rem; border-top: 1px solid var(--rule); }
+  .topic-grid span { color: hsl(var(--primary)); font: 0.7rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .topic-grid h3 { margin: 0.6rem 0 0.4rem; font-size: 1rem; font-weight: 540; }
+  .topic-grid p { margin: 0; color: hsl(var(--muted-foreground)); font-size: 0.85rem; line-height: 1.65; }
+  @media (max-width: 700px) { .research-page { padding-top: 3rem; } .research-interests { grid-template-columns: 1fr; gap: 1.5rem; } .topic-grid { grid-template-columns: 1fr; gap: 1.25rem; } }
+</style>

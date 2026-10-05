@@ -1,0 +1,75 @@
+---
+import '@pagefind/default-ui/css/ui.css'
+interface Props { lazy?: boolean; language?: string }
+const { lazy = false, language } = Astro.props
+const isChinese = language?.startsWith('zh')
+---
+
+<notebook-search data-lazy={lazy ? '' : undefined} data-dev={import.meta.env.DEV ? '' : undefined} data-pagefind-ignore>
+  <p class='search-status' role='status'>
+    {import.meta.env.DEV ? (isChinese ? '搜索使用生产环境索引。请构建后在预览环境中测试。' : 'Search uses the production index. Run npm run build, then npm run preview to try it.') : (isChinese ? '正在加载笔记索引…' : 'Loading the notebook index…')}
+  </p>
+  <div class='pagefind-mount'></div>
+  <noscript><p>{isChinese ? '搜索需要 JavaScript。' : 'Search needs JavaScript.'}</p></noscript>
+</notebook-search>
+
+<script>
+  class NotebookSearch extends HTMLElement {
+    private ready = false
+    private loading = false
+
+    connectedCallback() {
+      this.addEventListener('search:open', () => this.open())
+      if (!this.hasAttribute('data-lazy')) this.open()
+      this.addEventListener('keydown', (event) => {
+        if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+        const links = Array.from(this.querySelectorAll<HTMLAnchorElement>('.pagefind-ui__result-title a'))
+        if (links.length === 0) return
+        event.preventDefault()
+        const currentIndex = links.findIndex((link) => link === document.activeElement)
+        const nextIndex = currentIndex + (event.key === 'ArrowDown' ? 1 : -1)
+        if (nextIndex < 0) this.querySelector<HTMLInputElement>('input')?.focus()
+        else links[Math.min(nextIndex, links.length - 1)]?.focus()
+      })
+    }
+
+    async open() {
+      if (this.ready) {
+        this.querySelector<HTMLInputElement>('input')?.focus()
+        return
+      }
+      if (this.loading || this.hasAttribute('data-dev')) return
+      this.loading = true
+      const status = this.querySelector<HTMLElement>('.search-status')
+      const mount = this.querySelector<HTMLElement>('.pagefind-mount')
+      try {
+        const { PagefindUI } = await import('@pagefind/default-ui')
+        if (!mount) return
+        new PagefindUI({
+          element: mount,
+          bundlePath: '/pagefind/',
+          showImages: false,
+          showSubResults: true,
+          resetStyles: false,
+          processResult: (result) => ({ ...result, url: result.url.replace(/\/$/, '') || '/' })
+        })
+        this.ready = true
+        if (status) status.hidden = true
+        this.querySelector<HTMLInputElement>('input')?.focus()
+      } catch {
+        if (status) status.textContent = 'The search index could not load. You can still browse the archive or try again.'
+      } finally {
+        this.loading = false
+      }
+    }
+  }
+  customElements.define('notebook-search', NotebookSearch)
+</script>
+
+<style>
+  notebook-search { display: block; --pagefind-ui-scale: 0.86; --pagefind-ui-primary: hsl(var(--primary)); --pagefind-ui-text: hsl(var(--foreground)); --pagefind-ui-background: hsl(var(--background)); --pagefind-ui-border: hsl(var(--border)); --pagefind-ui-tag: hsl(var(--muted)); --pagefind-ui-border-width: 1px; --pagefind-ui-border-radius: 2px; --pagefind-ui-font: inherit; }
+  .search-status { color: hsl(var(--muted-foreground)); font-size: 0.9rem; line-height: 1.7; }
+  notebook-search :global(.pagefind-ui__search-input) { font-weight: 400; }
+  notebook-search :global(.pagefind-ui__result-link) { text-underline-offset: 0.25rem; }
+  notebook-search :global(mark) { color: hsl(var(--foreground)); background: hsl(var(--primary) / 0.18); }
+</style>

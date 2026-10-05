@@ -1,0 +1,126 @@
+---
+title: '理解 Policy Gradient：从目标到估计器'
+description: '把轨迹分布、对数导数与学习信号分开，理解策略梯度的假设及实现边界。'
+pubDate: 2026-09-28
+updatedDate: 2026-10-04
+category: Research
+collection: reinforcement-learning
+featured: true
+tags:
+  - reinforcement learning
+  - policy gradient
+  - foundations
+language: zh
+translationKey: policy-gradient
+---
+
+import Callout from '@/components/article/Callout.astro'
+import Figure from '@/components/article/Figure.astro'
+import RepositoryCard from '@/components/article/RepositoryCard.astro'
+import { Steps, Tabs, TabItem, Timeline } from 'astro-pure/user'
+
+策略梯度的公式很短，真正需要理解的是公式背后的三个对象：**轨迹的分布、分布的导数，以及对动作好坏的估计**。这份中文阅读笔记与英文笔记相互对应，同时演示数学、代码和学术写作组件。
+
+## 从优化目标开始
+
+令轨迹为 $\tau = (s_0,a_0,r_0,\ldots,s_T)$，策略为 $\pi_\theta$。在环境转移概率不依赖策略参数的假设下：
+
+$$
+p_\theta(\tau)=\rho_0(s_0)\prod_t\pi_\theta(a_t\mid s_t)P(s(t+1)\mid s_t,a_t).
+$$
+
+我们优化的不是某一条轨迹，而是轨迹回报的期望 $J(\theta)=\mathbb E[R(\tau)]$。
+
+<Callout type='definition' title='Definition / 得分函数'>
+对数导数恒等式 $\nabla p=p\nabla\log p$ 允许我们通过采样估计期望的梯度，不需要对模拟器本身求导。
+</Callout>
+
+## 把分布导数变成采样估计
+
+把上述恒等式代入目标，得到：
+
+$$
+\nabla_\theta J(\theta)=\mathbb E\left[R(\tau)\sum_t\nabla_\theta\log\pi_\theta(a_t\mid s_t)\right].
+$$
+
+这里只对策略概率求导。环境提供奖励，策略用奖励来重新分配自己采样到的动作的概率。
+
+<Figure src='/images/policy-gradient-loop.svg' alt='策略产生动作，环境产生奖励，估计器根据回报更新策略。' caption='图 1 · 从采样到更新的边界。示意图为本站原创。' width={900} height={300} />
+
+## 基线改变方差，而不改变目标
+
+如果基线 $b(s_t)$ 不依赖当前动作，则：
+
+$$
+\mathbb E\left[\nabla_\theta\log\pi_\theta(a_t\mid s_t)b(s_t)\right]=0.
+$$
+
+<Callout type='theorem' title='Theorem / 基线不变性'>
+在满足可交换求导与期望等常规条件时，用 $G_t-b(s_t)$ 替换 $G_t$ 不改变梯度估计的期望。基线的作用是减少与当前动作无关的波动。
+</Callout>
+
+<Callout type='intuition' title='Intuition / 一个更小的问题'>
+不要只问“这条轨迹回报有多高”，还要问“这个动作是否比该状态下的通常结果更好”。
+</Callout>
+
+| 学习信号 | 依赖的估计 | 需要检查的问题 |
+| --- | --- | --- |
+| 完整回报 | 采样轨迹 | 方差是否由少数异常轨迹主导？ |
+| 回报减基线 | 状态价值 | 基线是否错误地依赖当前动作？ |
+| GAE | TD 残差与价值函数 | 终止和截断是否被正确区分？ |
+
+## 最小实现与边界
+
+下面只展示一次更新的边界，不是一段可以独立运行的训练器。样本、价值估计与优化器需要由调用者提供。
+
+<Tabs>
+<TabItem label='PyTorch'>
+
+```python title="policy_update.py"
+def update_policy(log_probs, returns, baseline, optimizer):
+    advantages = returns - baseline.detach()
+    advantages = advantages.detach()
+    loss = -(log_probs * advantages).mean()  # [!code highlight]
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    return loss.detach()
+```
+
+</TabItem>
+<TabItem label='检查清单'>
+
+<Steps>
+
+1. 确认策略的 log probability 保留了计算图。
+2. 明确环境终止与 rollout 截断的区别。
+3. 把方差诊断与最终评价指标同时记录。
+
+</Steps>
+
+</TabItem>
+</Tabs>
+
+<Callout type='warning' title='Warning / 不要把启发式当成定理'>
+对回报做归一化是实践中的启发式，并不是策略梯度恒等式本身的一部分。解释实验时应当明确区分两者。[^normalization]
+</Callout>
+
+## 继续阅读与复现
+
+下一步可以阅读 [GAE 英文笔记](/blog/understanding-gae)，或者沿着 [强化学习专题](/zh/collections/reinforcement-learning) 继续。
+
+<RepositoryCard href='https://github.com/Farama-Foundation/Gymnasium' title='Farama / Gymnasium' description='用于记录交互环境接口及终止、截断语义的开源参考。' stack='Python · environment interface' />
+
+### References
+
+- [Generalized Advantage Estimation — paper PDF](https://arxiv.org/pdf/1506.02438)
+- [Gymnasium documentation](https://gymnasium.farama.org/)
+
+### 阅读轨迹
+
+<Timeline events={[
+  { date: 'Step 01', content: '先分离目标、采样与估计器。' },
+  { date: 'Step 02', content: '再检查基线和学习信号的实现。' }
+]} />
+
+[^normalization]: 样本内归一化会引入数据依赖的变换，不能简单等同于使用一个与动作无关的状态基线。

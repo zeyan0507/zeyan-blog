@@ -1,0 +1,36 @@
+---
+import SearchPanel from './SearchPanel.astro'
+import { localizePath } from '@/utils/languages'
+interface Props { language?: string }
+const { language } = Astro.props
+const isChinese = language?.startsWith('zh')
+---
+
+<dialog id='search-dialog' aria-labelledby='search-title' data-pagefind-ignore>
+  <div class='dialog-heading'><h2 id='search-title'>{isChinese ? '搜索笔记' : 'Search the notebook'}</h2><form method='dialog'><button aria-label={isChinese ? '关闭搜索' : 'Close search'}>Esc <span aria-hidden='true'>×</span></button></form></div>
+  <p class='dialog-hint'>{isChinese ? '搜索文章、标签和专题。使用 ↑ / ↓ 选择结果。' : 'Articles, tags, and collections. Use ↑ / ↓ to select a result.'}</p>
+  <SearchPanel lazy {language} />
+  <a class='archive-fallback' href={localizePath('/archives', language)}>{isChinese ? '按年份浏览 →' : 'Browse by year instead →'}</a>
+</dialog>
+
+<script>
+  const dialog = document.querySelector<HTMLDialogElement>('#search-dialog')
+  dialog?.addEventListener('click', (event) => {
+    if (event.target !== dialog) return
+    const bounds = dialog.getBoundingClientRect()
+    if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) dialog.close()
+  })
+</script>
+
+<style>
+  dialog { width: min(42rem, calc(100% - 2rem)); max-height: 80dvh; margin: 10dvh auto auto; padding: 1.5rem; overflow-y: auto; color: hsl(var(--foreground)); background: hsl(var(--background)); border: 1px solid var(--rule); border-radius: 3px; }
+  dialog::backdrop { background: hsl(var(--foreground) / 0.3); }
+  .dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  h2 { margin: 0; font-size: 1.1rem; font-weight: 500; }
+  button { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.4rem; color: hsl(var(--muted-foreground)); font: 0.75rem ui-monospace, monospace; }
+  button span { font-size: 1.35rem; }
+  .dialog-hint, .archive-fallback { font-size: 0.78rem; color: hsl(var(--muted-foreground)); }
+  .dialog-hint { margin-block: 1rem 1.5rem; line-height: 1.6; }
+  .archive-fallback { display: inline-block; margin-top: 1.5rem; }
+  @media (max-width: 640px) { dialog { margin-top: 5dvh; max-height: 90dvh; padding: 1.1rem; } }
+</style>

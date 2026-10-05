@@ -1,0 +1,7 @@
+---
+import SearchPanel from '@/components/search/SearchPanel.astro'
+import PageLayout from '@/layouts/BaseLayout.astro'
+const meta={title:'搜索',description:'搜索文章、标签、专题与笔记全文。',language:'zh-CN'}
+---
+<PageLayout {meta}><main class='page-column search-page'><a class='back' href='/zh/blog'>← 返回博客</a><header><p class='eyebrow'>笔记 / 搜索</p><h1>搜索</h1><p>输入关键词或短语搜索这本笔记。</p></header><SearchPanel language='zh-CN'/></main></PageLayout>
+<style>.search-page{padding-top:3rem;max-width:48rem}.back{color:hsl(var(--muted-foreground));font-size:.8rem}.search-page header{margin:3rem 0 2rem}.search-page h1{margin:.7rem 0 1rem;font:500 clamp(3rem,7vw,5.4rem)/1 Georgia,serif;letter-spacing:-.06em}.search-page header p:last-child{color:hsl(var(--muted-foreground))}</style>

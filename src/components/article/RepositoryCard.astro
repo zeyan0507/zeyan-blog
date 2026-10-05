@@ -1,0 +1,11 @@
+---
+interface Props { href: string; title: string; description: string; stack?: string }
+const { href, title, description, stack } = Astro.props
+---
+<a class='repository-link' {href} target='_blank' rel='noopener noreferrer'><strong>{title} ↗</strong><span>{description}</span>{stack && <small>{stack}</small>}</a>
+<style>
+  .repository-link { display: grid; gap: 0.45rem; padding-block: 1rem; border-block: 1px solid var(--rule); text-decoration: none; }
+  strong { font-size: 0.95rem; font-weight: 500; }
+  span { color: hsl(var(--muted-foreground)); font-size: 0.85rem; line-height: 1.65; }
+  small { color: hsl(var(--muted-foreground)); font: 0.7rem ui-monospace, monospace; }
+</style>

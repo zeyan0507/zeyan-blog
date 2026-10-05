@@ -1,0 +1,51 @@
+---
+import { getBlogCollection, getUniqueTagsWithCount } from 'astro-pure/server'
+import PageLayout from '@/layouts/BaseLayout.astro'
+
+const allPosts = (await getBlogCollection()).filter(({ data }) => !data.draft)
+const allTags = getUniqueTagsWithCount(allPosts)
+const meta = {
+  description: 'A compact index of the subjects covered in the notebook.',
+  title: 'Tags'
+}
+---
+
+<PageLayout {meta}>
+  <main class='page-column tags-page'>
+    <header class='tags-heading'>
+      <p class='eyebrow'>Notebook / index</p>
+      <h1>Tags</h1>
+      <p>Follow a single idea across research notes, technical writing, and learning logs.</p>
+    </header>
+
+    {allTags.length > 0 ? (
+      <ul class='tag-index'>
+        {allTags.map(([tag, count]) => (
+          <li><a href={`/tags/${tag}`}><span>#{tag}</span><small>{count} {count === 1 ? 'note' : 'notes'}</small><b>↗</b></a></li>
+        ))}
+      </ul>
+    ) : <p class='empty-state'>No tags yet.</p>}
+  </main>
+</PageLayout>
+
+<style>
+  .tags-page { padding-top: 4.5rem; }
+  .tags-heading { max-width: 44rem; padding-bottom: 3rem; border-bottom: 1px solid var(--rule); }
+  .tags-heading h1 { margin: 0.75rem 0 1rem; font: 500 clamp(3rem, 7vw, 5.4rem)/1 Georgia, 'Times New Roman', serif; letter-spacing: -0.06em; }
+  .tags-heading p:last-child { max-width: 37rem; margin: 0; color: hsl(var(--muted-foreground)); font-size: 0.98rem; line-height: 1.75; }
+  .tag-index { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 3rem; margin: 3.5rem 0 0; padding: 0; list-style: none; }
+  .tag-index li { border-top: 1px solid var(--rule); }
+  .tag-index li:nth-last-child(-n + 2) { border-bottom: 1px solid var(--rule); }
+  .tag-index a { display: grid; grid-template-columns: minmax(0, 1fr) auto 1rem; gap: 1rem; align-items: center; padding: 0.95rem 0; }
+  .tag-index a:hover span, .tag-index a:hover b { color: hsl(var(--primary)); }
+  .tag-index span { font-size: 0.95rem; transition: color 180ms ease; }
+  .tag-index small { color: hsl(var(--muted-foreground)); font: 0.68rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .tag-index b { color: hsl(var(--muted-foreground)); font-weight: 400; transition: color 180ms ease; }
+  .empty-state { margin-top: 3rem; color: hsl(var(--muted-foreground)); }
+  @media (max-width: 640px) {
+    .tags-page { padding-top: 3rem; }
+    .tag-index { grid-template-columns: 1fr; }
+    .tag-index li:nth-last-child(-n + 2) { border-bottom: 0; }
+    .tag-index li:last-child { border-bottom: 1px solid var(--rule); }
+  }
+</style>

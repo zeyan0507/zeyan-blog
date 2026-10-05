@@ -1,0 +1,15 @@
+---
+import type { GetStaticPaths,Page } from 'astro'
+import type { CollectionEntry } from 'astro:content'
+import { getCollection } from 'astro:content'
+import PageLayout from '@/layouts/BaseLayout.astro'
+import PostList from '@/components/blog/PostList.astro'
+import CategoryNav from '@/components/blog/CategoryNav.astro'
+export const prerender=true
+export const getStaticPaths=(async({paginate})=>{const posts=(await getCollection('blog',({data})=>!data.draft&&data.language.toLowerCase().startsWith('zh'))).sort((a,b)=>b.data.publishDate.valueOf()-a.data.publishDate.valueOf());return paginate(posts,{pageSize:8,props:{total:posts.length}})}) satisfies GetStaticPaths
+interface Props{page:Page<CollectionEntry<'blog'>>;total:number}
+const {page,total}=Astro.props
+const meta={title:'博客',description:'按时间记录正在思考的问题、工具与值得保留的想法。',language:'zh-CN'}
+---
+<PageLayout {meta}><main class='page-column blog-index'><header class='heading'><p class='eyebrow'>笔记 / 归档</p><div><h1>全部文章</h1><a href='/zh/archives'>按年份浏览 →</a></div><p>{meta.description}</p></header><CategoryNav/><section><div class='summary'><span>第 {page.currentPage} 页 · 共 {total} 篇文章</span><a href='/zh/search'>搜索笔记 ↗</a></div>{page.data.length?<PostList posts={page.data}/>:<p>暂无中文文章。</p>}<div class='pagination'>{page.url.prev&&<a href={page.url.prev}>← 较新</a>}{page.url.next&&<a href={page.url.next}>较旧 →</a>}</div></section></main></PageLayout>
+<style>.blog-index{padding-top:4.5rem}.heading{padding-bottom:2.5rem;border-bottom:1px solid var(--rule)}.heading>div{display:flex;align-items:end;justify-content:space-between}.heading h1{margin:.7rem 0 0;font:500 clamp(3rem,7vw,5.4rem)/1 Georgia,serif;letter-spacing:-.06em}.heading div>a,.heading>p,.summary{color:hsl(var(--muted-foreground))}.heading>p{max-width:42rem;line-height:1.75}.summary{display:flex;justify-content:space-between;margin-bottom:1rem;font:.72rem ui-monospace,monospace}.summary a{color:hsl(var(--primary))}.pagination{display:flex;justify-content:space-between;margin-top:1.5rem;font-size:.82rem}@media(max-width:640px){.blog-index{padding-top:3rem}.summary{flex-direction:column;gap:.5rem}}</style>

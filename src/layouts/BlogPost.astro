@@ -1,0 +1,60 @@
+---
+import type { MarkdownHeading } from 'astro'
+import type { CollectionEntry } from 'astro:content'
+import 'katex/dist/katex.min.css'
+import { MediumZoom } from 'astro-pure/advanced'
+import { Image } from 'astro:assets'
+import ArticleCopyright from '@/components/article/ArticleCopyright.astro'
+import ArticlePagination from '@/components/article/ArticlePagination.astro'
+import TableOfContents from '@/components/article/TableOfContents.astro'
+import PostList from '@/components/blog/PostList.astro'
+import { site } from '@/site-config'
+import PageLayout from '@/layouts/ContentLayout.astro'
+import { getBlogLanguageLinks, localizePath } from '@/utils/languages'
+
+interface Props { post: CollectionEntry<'blog'>; posts: CollectionEntry<'blog'>[]; headings: MarkdownHeading[]; remarkPluginFrontmatter: Record<string, unknown> }
+const { post, posts, headings, remarkPluginFrontmatter } = Astro.props
+const { id, data } = post
+const { description, heroImage, publishDate, title, updatedDate, draft: isDraft } = data
+const socialImage = `/og/${id}.png`
+const articleDate = publishDate.toISOString()
+const languageLinks = getBlogLanguageLinks(post, posts)
+const isChinese = data.language.toLowerCase().startsWith('zh')
+const categoryLabel = isChinese
+  ? ({ research: '研究', technical: '技术', 'paper-reading': '论文阅读', 'learning-notes': '学习笔记', 'daily-life': '日常' } as Record<string, string>)[data.category]
+  : site.blogCategories.find((category) => category.slug === data.category)?.label
+const related = posts.filter((post) => post.id !== id && (!data.translationKey || post.data.translationKey !== data.translationKey) && (
+  (data.collection && post.data.collection === data.collection) || post.data.tags.some((tag) => data.tags.includes(tag))
+)).filter((post) => post.data.language.toLowerCase().startsWith('zh') === isChinese).slice(0, 3)
+---
+
+<PageLayout meta={{ articleDate, articleModified: updatedDate?.toISOString(), language: data.language, description, ogImage: socialImage, title }} {languageLinks} back={localizePath('/blog/all', data.language)}>
+  {headings.length > 0 && <TableOfContents {headings} language={data.language} slot='sidebar' />}
+  <header class='article-head' slot='header'>
+    <p class='eyebrow'>{categoryLabel} {isDraft && `· ${isChinese ? '草稿' : 'Draft'}`}</p>
+    <h1>{title}</h1>
+    <p class='article-dek'>{description}</p>
+    <div class='article-meta'><span>{publishDate.toISOString().slice(0, 10)}</span>{updatedDate && <span>{isChinese ? '更新于' : 'Updated'} {updatedDate.toISOString().slice(0, 10)}</span>}<span>{remarkPluginFrontmatter.minutesRead || (isChinese ? '阅读笔记' : 'Reading note')}</span></div>
+    {data.tags.length > 0 && <div class='article-tags'>{data.tags.map((tag) => <a href={localizePath(`/tags/${encodeURIComponent(tag)}`, data.language)} data-pagefind-filter='tag'>{tag}</a>)}</div>}
+    {data.collection && <a class='collection-link' href={localizePath(`/collections/${data.collection}`, data.language)} data-pagefind-filter='collection'>{isChinese ? '所属专题' : 'Part of'} {data.collection.replaceAll('-', ' ')} →</a>}
+    {heroImage && <Image src={heroImage.src} alt={heroImage.alt || ''} class='article-hero' />}
+  </header>
+  <slot />
+  <Fragment slot='bottom'><ArticleCopyright {data} language={data.language} />{related.length > 0 && <section class='related-posts'><h2>{isChinese ? '相关笔记' : 'Related notes'}</h2><PostList posts={related} compact /></section>}<ArticlePagination posts={posts.filter((post) => post.data.language.toLowerCase().startsWith('zh') === isChinese)} {id} language={data.language} /></Fragment>
+</PageLayout>
+
+<MediumZoom />
+
+<style>
+  .article-head { max-width: 51rem; }
+  .article-head h1 { max-width: 48rem; margin: 0.8rem 0 1rem; font: 500 clamp(2.35rem, 5vw, 4.3rem)/1.08 Georgia, 'Times New Roman', serif; letter-spacing: -0.055em; }
+  .article-dek { max-width: 45rem; margin: 0; color: hsl(var(--muted-foreground)); font-size: 1.05rem; line-height: 1.75; }
+  .article-meta, .article-tags { display: flex; flex-wrap: wrap; gap: 0.55rem 1.1rem; margin-top: 1.5rem; color: hsl(var(--muted-foreground)); font: 0.72rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .article-meta span + span::before { content: '·'; margin-right: 1.1rem; color: hsl(var(--border)); }
+  .article-tags a { color: hsl(var(--primary)); text-decoration: underline; text-decoration-color: hsl(var(--border)); text-underline-offset: 0.25rem; }
+  .article-tags a:hover { text-decoration-color: hsl(var(--primary)); }
+  .collection-link { display: inline-block; margin-top: 1rem; color: hsl(var(--primary)); font-size: 0.8rem; }
+  .article-hero { max-width: 100%; height: auto; margin-top: 2rem; }
+  .related-posts { margin-top: 3rem; }
+  .related-posts h2 { margin-bottom: 1rem; font-size: 1.2rem; font-weight: 500; }
+</style>

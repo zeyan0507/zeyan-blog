@@ -1,0 +1,61 @@
+---
+import type { MarkdownHeading } from 'astro'
+interface Props { headings: MarkdownHeading[]; language?: string }
+const { headings, language } = Astro.props
+const isChinese = language?.toLowerCase().startsWith('zh')
+const visibleHeadings = headings.filter((heading) => heading.depth >= 2 && heading.depth <= 4)
+---
+
+<notebook-toc>
+  <details open>
+    <summary>{isChinese ? '本页目录' : 'On this page'}</summary>
+    <nav aria-label={isChinese ? '文章目录' : 'Table of contents'}>
+      <ol>{visibleHeadings.map((heading) => <li style={`--toc-indent: ${(heading.depth - 2) * 0.7}rem`}><a href={`#${heading.slug}`}>{heading.text}</a></li>)}</ol>
+    </nav>
+  </details>
+</notebook-toc>
+
+<script>
+  class NotebookTOC extends HTMLElement {
+    connectedCallback() {
+      const details = this.querySelector('details')
+      const mediaQuery = window.matchMedia('(max-width: 900px)')
+      const updateLayout = () => { if (details) details.open = !mediaQuery.matches }
+      updateLayout()
+      mediaQuery.addEventListener('change', updateLayout)
+      const links = Array.from(this.querySelectorAll<HTMLAnchorElement>('a'))
+      const sections = links.map((link) => document.getElementById(decodeURIComponent(link.hash.slice(1))))
+      let scheduled = false
+      const updateActive = () => {
+        let current = 0
+        sections.forEach((section, index) => {
+          if (section && section.getBoundingClientRect().top <= 150) current = index
+        })
+        links.forEach((link, index) => {
+          link.classList.toggle('active', index === current)
+          if (index === current) link.setAttribute('aria-current', 'location')
+          else link.removeAttribute('aria-current')
+        })
+        scheduled = false
+      }
+      updateActive()
+      window.addEventListener('scroll', () => {
+        if (scheduled) return
+        scheduled = true
+        requestAnimationFrame(updateActive)
+      }, { passive: true })
+    }
+  }
+  customElements.define('notebook-toc', NotebookTOC)
+</script>
+
+<style>
+  notebook-toc { display: block; }
+  summary { color: hsl(var(--muted-foreground)); font: 0.7rem ui-monospace, monospace; text-transform: uppercase; letter-spacing: 0.08em; cursor: pointer; }
+  ol { display: grid; gap: 0.15rem; margin: 1rem 0 0; padding: 0; list-style: none; }
+  li { padding-inline-start: var(--toc-indent); }
+  a { display: block; border-inline-start: 1px solid var(--rule); padding: 0.35rem 0 0.35rem 0.85rem; color: hsl(var(--muted-foreground)); font-size: 0.78rem; line-height: 1.5; }
+  a.active { border-color: hsl(var(--primary)); color: hsl(var(--primary)); }
+  @media (min-width: 901px) { summary { list-style: none; pointer-events: none; } }
+  @media (max-width: 900px) { details { padding-block: 1rem; border-block: 1px solid var(--rule); } }
+</style>

@@ -1,0 +1,10 @@
+{
+  "name": "Zeyan's Blog",
+  "short_name": "ZEYAN",
+  "icons": [
+    { "src": "/favicon/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ],
+  "theme_color": "#fbfaf7",
+  "background_color": "#fbfaf7",
+  "display": "standalone"
+}

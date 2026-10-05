@@ -1,0 +1,20 @@
+---
+import type { CollectionEntry } from 'astro:content'
+import { localizePath } from '@/utils/languages'
+
+interface Props { id: string; posts: CollectionEntry<'blog'>[]; language?: string }
+const { id, posts, language } = Astro.props
+const index = posts.findIndex((post) => post.id === id)
+const previous = posts[index - 1]
+const next = posts[index + 1]
+const isChinese = language?.toLowerCase().startsWith('zh')
+---
+
+{(previous || next) && <nav class='article-pagination' aria-label={isChinese ? '文章翻页' : 'Article pagination'}>
+  <span>{previous && <a href={localizePath(`/blog/${previous.id}`, language)}><small>{isChinese ? '上一篇' : 'Previous'}</small><b>← {previous.data.title}</b></a>}</span>
+  <span>{next && <a href={localizePath(`/blog/${next.id}`, language)}><small>{isChinese ? '下一篇' : 'Next'}</small><b>{next.data.title} →</b></a>}</span>
+</nav>}
+
+<style>
+  .article-pagination{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;margin-top:2rem}.article-pagination>span:last-child{text-align:right}.article-pagination a{display:grid;gap:.3rem;padding:1rem;border-radius:.65rem}.article-pagination a:hover{background:hsl(var(--muted))}.article-pagination small{color:hsl(var(--muted-foreground));font-size:.68rem;text-transform:uppercase;letter-spacing:.08em}.article-pagination b{overflow:hidden;font-size:.86rem;font-weight:500;text-overflow:ellipsis;white-space:nowrap}@media(max-width:640px){.article-pagination{grid-template-columns:1fr}.article-pagination>span:last-child{text-align:left}}
+</style>
