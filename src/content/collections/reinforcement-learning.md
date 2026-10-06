@@ -5,10 +5,11 @@ description: From Markov decision processes to policy optimisation, a record of 
 descriptionZh: 从马尔可夫决策过程到策略优化，记录对序列决策机制的理解过程。
 introZh: 一条连接基础理论与实现细节的长期线索。这些笔记尽量让假设保持可见，而不是将它们抹平。
 started: 2025-09-01
-updated: 2026-10-04
+updated: 2026-10-06
 posts:
   - understanding-gae
   - understanding-ppo
+  - understanding-sac
   - from-dqn-to-ppo
 status: Active
 ---

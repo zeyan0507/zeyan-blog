@@ -1,0 +1,442 @@
+---
+title: 'From Maximum Entropy to SAC: Understanding Soft Actor-Critic'
+description: 'A merged, paper-grounded SAC reading guide: soft policy iteration, network losses, reparameterization, original figures, experiments, source code, and the distinction between original and modern SAC.'
+publishDate: '2026-10-06'
+updatedDate: '2026-10-06'
+category: paper-reading
+collection: reinforcement-learning
+researchTopics:
+  - reinforcement-learning
+paper:
+  title: 'Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor'
+  authors: ['Tuomas Haarnoja', 'Aurick Zhou', 'Pieter Abbeel', 'Sergey Levine']
+  year: 2018
+  venue: ICML
+  url: 'https://proceedings.mlr.press/v80/haarnoja18b.html'
+  arxivId: '1801.01290'
+featured: true
+tags:
+  - reinforcement learning
+  - SAC
+  - maximum entropy
+  - off policy
+  - actor critic
+  - paper reading
+language: English
+translationKey: understanding-sac
+---
+
+import Callout from '@/components/article/Callout.astro'
+import Figure from '@/components/article/Figure.astro'
+
+# From Maximum Entropy to SAC: Understanding Soft Actor-Critic
+
+> **Paper:** *Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor*<br />
+> **Authors:** Tuomas Haarnoja, Aurick Zhou, Pieter Abbeel, Sergey Levine<br />
+> **Publication:** ICML 2018, PMLR 80:1861–1870<br />
+> **Source:** [Conference paper](https://proceedings.mlr.press/v80/haarnoja18b.html) · [arXiv:1801.01290](https://arxiv.org/abs/1801.01290)
+
+This article merges my publishable reading notes with six groups of questions from Obsidian: motivation and related work, derivation, implementation, experiments, future questions, and synthesis. The original paper is the primary source. Modern implementation changes are labeled separately rather than retroactively inserted into the 2018 algorithm.
+
+## 1. SAC in one sentence
+
+SAC combines **the sample reuse of off-policy learning** with **the exploration and training stability encouraged by stochastic policies and a maximum-entropy objective**.
+
+$$
+\text{Maximum Entropy RL}
+\rightarrow\text{Soft Policy Evaluation}
+\rightarrow\text{Soft Policy Improvement}
+\rightarrow\text{Soft Policy Iteration}
+\rightarrow\text{Deep SAC}.
+$$
+
+<Callout type='definition' title='The central idea'>
+SAC does not merely add an entropy bonus to the Actor. Entropy enters both policy improvement and value evaluation: the Actor seeks valuable behavior without prematurely becoming deterministic, while the Critic evaluates returns that include future entropy.
+</Callout>
+
+## 2. From PPO and DDPG to SAC: what problem does it solve?
+
+The first question in my Obsidian notes was: why do we need another actor–critic algorithm?
+
+- **PPO / TRPO:** Relatively robust, but primarily on-policy. A rollout can be reused within its update cycle, not indefinitely replayed as ordinary off-policy experience.
+- **DDPG:** Improves sample reuse through a replay buffer, but a deterministic policy and feedback from estimation errors can make training brittle; exploration also needs additional design.
+- **Soft Q-Learning (SQL):** Already uses maximum entropy, but producing a tractable sampler from an energy-based Q representation is not always straightforward.
+- **SAC:** Combines replay, a directly sampleable stochastic Actor, and a soft Critic. Twin Q-functions and slowly updated targets further control estimation error and moving training targets.
+
+The related-work story is not a simple sequence of replacements. It is the convergence of **value learning, policy gradients, and maximum-entropy control**. Section 2 also discusses maximum-entropy inverse RL, entropy-regularized policy learning, and contemporary TD3. Their assumptions and proofs cannot automatically be transferred to SAC.
+
+## 3. The maximum-entropy objective and temperature
+
+For intuition, start with the familiar infinite-horizon discounted formulation:
+
+$$
+J(\pi)=\mathbb E_{\tau\sim\pi}\left[
+\sum_{t=0}^{\infty}\gamma^t
+\left(r(s_t,a_t)+\alpha\mathcal H(\pi(\cdot\mid s_t))\right)
+\right].
+$$
+
+The temperature $\alpha>0$ controls the relative weight of reward and entropy. Section 3.2, Eq. (1) of the original paper starts with a finite-horizon formulation, then suppresses $\alpha$ by scaling rewards. I keep it explicit to connect the derivation to code. The discounted expression above is a common explanatory convention, not a claim that every state-distribution weighting matches the paper verbatim.
+
+- A larger $\alpha$ places more weight on retaining randomness; it does not mean ignoring reward.
+- A smaller $\alpha$ favors exploiting currently valuable actions.
+- Under appropriate conditions, the $\alpha\to0$ limit recovers ordinary reward maximization.
+
+### Why does negative log probability appear everywhere?
+
+$$
+\mathcal H(\pi(\cdot\mid s))
+=-\mathbb E_{a\sim\pi}[\log\pi(a\mid s)].
+$$
+
+Thus a sampled entropy contribution is $-\alpha\log\pi(a\mid s)$. For continuous actions, this is a **probability density and differential entropy**: densities may exceed 1 and differential entropy may be negative. A sampled $-\log\pi$ is not necessarily a nonnegative bonus.
+
+## 4. Soft value and the soft Bellman equation
+
+Following the paper's convention, $Q^\pi(s,a)$ includes the current reward and future entropy once the current action is fixed. $V^\pi$ incorporates the current state's entropy:
+
+$$
+V^\pi(s)=\mathbb E_{a\sim\pi}
+\left[Q^\pi(s,a)-\alpha\log\pi(a\mid s)\right],
+$$
+
+$$
+Q^\pi(s,a)=r(s,a)+\gamma\mathbb E_{s'\sim p}[V^\pi(s')].
+$$
+
+**Soft policy evaluation** repeatedly applies this backup for a fixed $\pi$ to obtain its soft Q-function; see Section 4.1, Eq. (2)–(3). It evaluates not just future environment rewards, but also the value of retaining randomness in future states.
+
+### A numerical example
+
+Let $\alpha=1$, with next-state values $Q(s',a_1)=10$ and $Q(s',a_2)=9$, and current-policy probabilities $0.7$ and $0.3$.
+
+$$
+V^\pi(s')=0.7(10-\log0.7)+0.3(9-\log0.3)
+\approx10.3109.
+$$
+
+For $r=2$ and $\gamma=0.9$, the backup is $2+0.9\times10.3109\approx11.2798$. The value $10.3109$ already includes its entropy term; do not add that state's entropy twice.
+
+## 5. Why is the ideal policy exp(Q / alpha)?
+
+Fix a state and its Q-function, then maximize:
+
+$$
+\sum_a\pi(a\mid s)Q(s,a)
+-\alpha\sum_a\pi(a\mid s)\log\pi(a\mid s),
+\qquad\sum_a\pi(a\mid s)=1.
+$$
+
+A Lagrange multiplier for this discrete example gives $\log\pi(a\mid s)=Q(s,a)/\alpha+C$, hence:
+
+$$
+\pi_{\mathrm{ideal}}(a\mid s)
+=\frac{\exp(Q(s,a)/\alpha)}{Z(s)},
+\qquad Z(s)=\sum_a\exp(Q(s,a)/\alpha).
+$$
+
+For continuous actions, replace the sum with an integral and require that the normalization exists. With $Q=(10,9)$ and $\alpha=1$, the probabilities are approximately $0.7311$ and $0.2689$: a nearly optimal alternative is not immediately discarded.
+
+<Callout type='definition' title='Fixed-policy evaluation is not automatically log-sum-exp'>
+For a fixed policy, soft value is the expectation of Q minus log probability. Only after unrestricted entropy-regularized maximization over the admissible distributions does the optimal value become alpha log Z. Do not replace an arbitrary policy's value with log-sum-exp.
+</Callout>
+
+## 6. How KL projection produces the Actor loss
+
+A practical Actor belongs to a tractable distribution family $\Pi$, such as a tanh-transformed Gaussian. It need not represent the ideal Boltzmann distribution exactly. Section 4.1, Eq. (4) therefore uses:
+
+$$
+\pi_{\mathrm{new}}=\arg\min_{\pi'\in\Pi}
+D_{\mathrm{KL}}\left(
+\pi'(\cdot\mid s)\;\middle\|\;
+\frac{\exp(Q^{\pi_{\mathrm{old}}}(s,\cdot)/\alpha)}{Z(s)}
+\right).
+$$
+
+Expanding and multiplying by $\alpha$ gives:
+
+$$
+\alpha D_{\mathrm{KL}}
+=\mathbb E_{a\sim\pi'}[\alpha\log\pi'(a\mid s)-Q(s,a)]
++\alpha\log Z(s).
+$$
+
+Q is fixed during this policy-improvement step, so $Z(s)$ does not depend on the new Actor parameters and can be omitted from the gradient objective. Averaging over replay-buffer states yields:
+
+$$
+J_\pi(\phi)=\mathbb E_{s\sim\mathcal D,\,a\sim\pi_\phi}
+[\alpha\log\pi_\phi(a\mid s)-Q(s,a)].
+$$
+
+**Minimizing** this loss maximizes $Q-\alpha\log\pi$. The KL direction is from the new policy to the energy target, not the reverse. Omitting $Z$ does not permit omitting the action transformation's Jacobian.
+
+## 7. What the theoretical guarantees do—and do not—say
+
+The statement in my earlier notes that “the algorithm converges to the optimal policy” needs qualification.
+
+Section 4.1's Lemma 1, Lemma 2, and Theorem 1 establish soft evaluation convergence, soft improvement, and the soft policy-iteration result within the considered policy set, under assumptions including a finite action set and exact evaluation and improvement.
+
+**This is not a global convergence guarantee for continuous-action neural SAC with a finite replay buffer and a few SGD steps.** The practical algorithm is a function-approximation counterpart of the theoretical iteration. Its performance and stability still require empirical verification.
+
+## 8. Which networks does original SAC use?
+
+The following describes **the original ICML 2018 version**, using the paper's notation:
+
+| Component | Parameters | Input and output | Role |
+| --- | --- | --- | --- |
+| Stochastic Actor | $\phi$ | State → action distribution | Sample actions and compute log probability |
+| Two soft Q-functions | $\theta_1,\theta_2$ | State, action → Q | Fit soft Bellman targets and mitigate overestimation |
+| Soft value | $\psi$ | State → V | Approximate current-policy soft value |
+| Target value | $\bar\psi$ | Next state → target V | Supply slowly moving bootstrap targets for Q |
+| Replay buffer | $\mathcal D$ | Stored transitions | Reuse experience; not a network |
+
+The original target is a **V network**. Seeing two Q-functions does not imply that the original algorithm also has the two target Q-networks used by modern SAC.
+
+## 9. The three losses: Q, value, and Actor
+
+Let $m$ indicate whether bootstrapping is allowed: $m=0$ at a genuine terminal transition and $m=1$ at an ordinary nonterminal transition. This mask is an implementation addition; it is not explicit in the paper's simplified main-text equations.
+
+### 9.1 Q: regress stored actions toward the target
+
+$$
+y_Q=r+\gamma m V_{\bar\psi}(s'),
+$$
+
+$$
+J_Q(\theta_i)=\mathbb E_{(s,a,r,s')\sim\mathcal D}
+\left[\frac12\left(Q_{\theta_i}(s,a)-\operatorname{sg}(y_Q)\right)^2\right].
+$$
+
+$\operatorname{sg}$ denotes stop-gradient. The action $a$ is the historical action stored in replay. Do not replace it with a new Actor action while retaining the original reward and next state.
+
+### 9.2 Value: estimate soft value with current-policy actions
+
+$$
+y_V=\min_{i\in\{1,2\}}Q_{\theta_i}(s,a_\pi)
+-\alpha\log\pi_\phi(a_\pi\mid s),\qquad a_\pi\sim\pi_\phi(\cdot\mid s),
+$$
+
+$$
+J_V(\psi)=\mathbb E_{s\sim\mathcal D}
+\left[\frac12\left(V_\psi(s)-\operatorname{sg}(y_V)\right)^2\right].
+$$
+
+Eq. (5) contains an action expectation; implementation constructs a stochastic target from one current-policy sample. With the target detached, this gives a sampled estimate of the corresponding expected gradient with respect to value parameters. The squared sampled target and the square involving the complete expectation are not numerically identical losses.
+
+### 9.3 Actor: increase soft Q while retaining entropy
+
+$$
+J_\pi(\phi)=\mathbb E_{s\sim\mathcal D,\,\epsilon\sim\mathcal N}
+\left[\alpha\log\pi_\phi(a_\pi\mid s)
+-\min_i Q_{\theta_i}(s,a_\pi)\right],
+\qquad a_\pi=f_\phi(\epsilon;s).
+$$
+
+The paper derives Eq. (5)–(13) using single-Q notation, then explains in Section 4.2 that the practical value and Actor updates use the minimum of two Q-functions. Both critics fit their targets separately. Taking the minimum is conservative; it does not prove that every source of overestimation disappears.
+
+## 10. Reparameterization: backpropagating through a stochastic action
+
+For a diagonal Gaussian:
+
+$$
+u=\mu_\phi(s)+\sigma_\phi(s)\odot\epsilon,
+\qquad\epsilon\sim\mathcal N(0,I),\qquad a=\tanh u.
+$$
+
+Randomness comes from parameter-independent $\epsilon$, while the action is a differentiable function of the parameters. The Actor can therefore use the derivative of $Q(s,a)$ with respect to its action, rather than relying only on a likelihood-ratio estimator:
+
+$$
+\nabla_\phi Q_\theta(s,f_\phi(\epsilon;s))
+=\nabla_a Q_\theta(s,a)\,\nabla_\phi f_\phi(\epsilon;s).
+$$
+
+During an Actor update, **freeze Q parameters without cutting the gradient from Q to the input action**. Placing the whole Q forward pass inside `no_grad`, or detaching $a_\pi$, removes this essential path. Conversely, supervised targets for Q and V should be detached.
+
+### Correct the probability density after tanh
+
+For $a=b+c\odot\tanh u$, with $c_j>0$ scaling actions to the environment's bounds:
+
+$$
+\log\pi(a\mid s)=\log\mathcal N(u;\mu,\sigma)
+-\sum_j\log(1-\tanh^2u_j)-\sum_j\log c_j.
+$$
+
+This is a change-of-variables requirement, not an optional stabilization trick. Use a numerically stable Jacobian calculation and sum across action dimensions to obtain a joint log probability per sample. The unsquashed Gaussian's log probability is insufficient.
+
+## 11. Off-policy states do not imply old-policy actions everywhere
+
+| Purpose | State source | Action source |
+| --- | --- | --- |
+| Current-Q regression | Replay-buffer $s$ | Stored $a$ paired with reward and next state |
+| Original-SAC value target | Replay-buffer $s$ | A newly sampled current-policy $a_\pi$ |
+| Actor loss | Replay-buffer $s$ | A newly sampled current-policy $a_\pi$ |
+| Modern-SAC next-state target | Replay-buffer $s'$ | A newly sampled current-policy $a'$ at $s'$ |
+
+SAC can learn the current policy on historical states without inserting PPO's old/new policy ratio into these standard losses. That does not eliminate coverage concerns: the Critic may extrapolate poorly on states and actions insufficiently represented in replay.
+
+## 12. One complete original-SAC update
+
+<Figure src='/images/sac-paper/algorithm-1-original-sac.png' alt='Algorithm 1 from the ICML 2018 SAC paper, showing value, twin Q, Actor, and target-value updates.' caption='Algorithm 1 · Original paper, PDF page 5. This version contains a separate value network and target value network. The image is extracted directly from the paper.' width={593} height={476} />
+
+```text
+Initialize actor, two critics, value, target value, and replay buffer
+Repeat:
+    Sample an action from the current stochastic actor
+    Step the environment and store the transition
+    For each gradient step:
+        Sample a minibatch from the replay buffer
+        Update value using current-policy actions and a detached soft-value target
+        Update both critics using stored actions and the target value network
+        Update actor with reparameterized actions and the minimum critic value
+        target_value = tau * value + (1 - tau) * target_value
+```
+
+This is a procedural summary of Algorithm 1, not executable reproduction code. One or several gradient steps can follow each environment step. **Sample efficiency is not the same as low computational cost**: more reuse still costs additional optimization.
+
+The target value uses Polyak / EMA updates:
+
+$$
+\bar\psi\leftarrow\tau\psi+(1-\tau)\bar\psi.
+$$
+
+Here $\tau$ weights the new parameters. Some code uses `polyak` to name the old-parameter weight, corresponding to $1-\tau$. Check the equation rather than relying on the parameter name.
+
+## 13. Do not conflate original and modern SAC
+
+The follow-up paper [*Soft Actor-Critic Algorithms and Applications*](https://arxiv.org/abs/1812.05905) and modern implementations commonly make the following changes:
+
+| Feature | Original ICML 2018 SAC | Common modern SAC |
+| --- | --- | --- |
+| Separate value network | Present | Usually omitted |
+| Target networks | Target value | Two target Q-functions |
+| Q target | $r+\gamma m V_{\bar\psi}(s')$ | Sample a current-policy next action and estimate next soft value directly |
+| Entropy coefficient | Fixed coefficient / reward scaling | Either fixed or automatically learned $\alpha$ |
+
+The modern target is:
+
+$$
+y_Q^{\mathrm{modern}}=r+\gamma m
+\left[\min_i Q_{\bar\theta_i}(s',a')
+-\alpha\log\pi_\phi(a'\mid s')\right],
+\qquad a'\sim\pi_\phi(\cdot\mid s').
+$$
+
+There is no $J_V$ in this version. Target Q-functions use EMA, and the next action still comes from the current Actor; a separate target Actor is not required.
+
+### Automatic temperature tuning is a later extension
+
+With target entropy $\mathcal H_{\mathrm{target}}$, one temperature objective is:
+
+$$
+J_\alpha=\mathbb E_{a\sim\pi}
+\left[-\alpha\left(\log\pi(a\mid s)+\mathcal H_{\mathrm{target}}\right)\right].
+$$
+
+Hold the Actor's log probability fixed during the temperature update. Intuitively, increase $\alpha$ when entropy is too low and decrease it when entropy is too high. Many implementations optimize `log_alpha` for positivity and use:
+
+```python
+alpha_loss = -(log_alpha * (log_probability + target_entropy).detach()).mean()
+```
+
+This is a common log-temperature optimization form, not a numerical identity obtained by simply substituting into $J_\alpha$. Continuous-action code often uses `-action_dim` as a target-entropy heuristic, but this depends on action coordinates and density conventions, not a universal constant. Spinning Up's educational version fixes $\alpha$; Stable-Baselines3 supports automatic tuning.
+
+## 14. The experiments: environment steps and random seeds
+
+<Figure src='/images/sac-paper/figure-1-continuous-control.png' alt='Figure 1 from the SAC paper: six learning curves for Hopper, Walker2d, HalfCheetah, Ant, and two Humanoid environments.' caption='Figure 1 · Original paper, PDF page 6. The horizontal axis is environment interaction steps; the vertical axis is evaluation environment return. Solid curves are means over five seeds and shading spans the minimum to maximum, not standard deviation or a confidence interval.' width={1218} height={653} />
+
+Section 5 compares SAC with DDPG, PPO, SQL, and TD3 on Hopper-v1, Walker2d-v1, HalfCheetah-v1, Ant-v1, Humanoid-v1, and the rllab Humanoid environment.
+
+The main text reports five seeds and one evaluation rollout every 1,000 environment steps. Maximum-entropy methods use mean actions or the corresponding evaluation choice described in the paper. The curves show **environment return without the entropy term**, not the complete objective optimized during training.
+
+My takeaway is strong evidence of sample efficiency and performance on difficult continuous-control tasks. Figure 1 does not establish strict dominance over every baseline at every point in every environment, and it is not evidence that SAC wins on all tasks. Environment versions, evaluation conventions, and seed counts matter for reproduction.
+
+## 15. Ablations: stochastic policies, reward scale, and targets
+
+<Figure src='/images/sac-paper/figure-2-stochastic-vs-deterministic.png' alt='Figure 2 from the SAC paper: stochastic SAC and a deterministic variant across random seeds on rllab Humanoid.' caption='Figure 2 · Original paper, PDF page 7. The stochastic-policy version exhibits smaller across-seed variation. The deterministic variant also uses the paper-specific network and update choices; this is not a universal guarantee for arbitrary algorithms.' width={505} height={355} />
+
+The stochastic policy helps prevent premature collapse of Actor variance and influences future-state choices through soft value. Figure 2 supports the stability benefits of that training design. It does not imply that evaluation must always sample stochastic actions.
+
+<Figure src='/images/sac-paper/figure-3-hyperparameter-sensitivity.png' alt='Figure 3 from the SAC paper: mean-action evaluation, reward scaling, and target smoothing on Ant-v1.' caption='Figure 3 · Original paper, PDF page 8. The three panels study evaluation behavior, reward scale, and the target smoothing coefficient. Original SAC still requires reward-scale tuning; targets that move too quickly or too slowly have different costs.' width={1218} height={328} />
+
+Three observations worth retaining:
+
+1. **Stochastic training, potentially deterministic evaluation:** Mean-action evaluation can obtain higher return. It is not generally the transformed distribution's MAP action or guaranteed optimal for an arbitrary return objective.
+2. **Reward scaling changes effective temperature:** Multiplying rewards by $c>0$ with fixed entropy weight gives an effective temperature $\alpha/c$ relative to the original rewards. Too little scaling can obscure reward; too much can induce premature determinism.
+3. **Targets should move slowly, not remain frozen:** Large $\tau$ can destabilize learning; small $\tau$ can slow it. The paper uses $\tau=0.005$ across these tasks, not as a universally optimal setting.
+
+## 16. Connections to DQN, GAE, PPO, DDPG, and TD3
+
+| Method | Core learning object / update idea | Connection to SAC |
+| --- | --- | --- |
+| DQN | Discrete-action Q, replay, target network | Shares data reuse and bootstrapping; SAC does not enumerate continuous actions for a hard maximum |
+| GAE | Advantage estimation with a bias–variance trade-off | Common in on-policy Actor updates; standard SAC needs neither GAE nor PPO ratios |
+| PPO | Clipped surrogate for old-policy rollout updates | SAC trains its Actor through soft Q and can reuse a replay buffer over time |
+| DDPG | Deterministic Actor following Critic action gradients | SAC retains a differentiable action path, but learns a stochastic distribution with maximum entropy |
+| TD3 | Twin Q-functions, delayed policy updates, and related design | SAC also takes the minimum of two critics, but differs in its stochastic policy and entropy target |
+
+My learning route is **DQN's replay and targets → GAE's advantage estimation → PPO's controlled policy updates → SAC's off-policy maximum-entropy policy iteration**. This is a conceptual route, not a claim that SAC depends on GAE's equations.
+
+Related reading: [GAE notes](/blog/understanding-gae) · [PPO notes](/blog/understanding-ppo).
+
+## 17. Open-source code: read by algorithm version
+
+| Code / documentation | Role | Suggested reading |
+| --- | --- | --- |
+| [haarnoja/sac](https://github.com/haarnoja/sac) | Authors' original SAC repository with historical dependencies | [SAC update code](https://github.com/haarnoja/sac/blob/master/sac/algos/sac.py), corresponding to the original V / target-V structure |
+| [rail-berkeley/softlearning](https://github.com/rail-berkeley/softlearning) | Authors' subsequent framework | Compare later algorithms and configurations; do not assume equivalence to the original ICML experiments |
+| [OpenAI Spinning Up SAC](https://spinningup.openai.com/en/latest/algorithms/sac.html) | Educational modern version without separate V, using fixed $\alpha$ | [PyTorch SAC](https://github.com/openai/spinningup/blob/master/spinup/algos/pytorch/sac/sac.py): Q target, Actor loss, and Polyak updates |
+| [Stable-Baselines3 SAC](https://stable-baselines3.readthedocs.io/en/master/modules/sac.html) | Engineering-oriented modern implementation with automatic entropy tuning | [SAC source](https://github.com/DLR-RM/stable-baselines3/blob/master/stable_baselines3/sac/sac.py): temperature, termination masks, and training logic |
+| [CleanRL SAC](https://github.com/vwxyzjn/cleanrl/blob/master/cleanrl/sac_continuous_action.py) | Single-file implementation with an accessible training loop | Action scaling, log-probability correction, temperature, and twin-critic updates |
+
+Start by locating `target`, then `actor_loss`, then `alpha` and the target update. A missing value network may indicate a later version rather than an omitted original-paper formula. Dependencies, environment APIs, and defaults change over time. Strict reproduction requires recording the commit, environment version, and all hyperparameters.
+
+## 18. An implementation checklist
+
+- **Loss sign:** Minimize $\alpha\log\pi-Q$ for the Actor, not its negative.
+- **Two action sources:** Q regression uses stored actions; Actor / value use current-policy samples.
+- **Gradient paths:** Detach Q and V targets; preserve the Actor gradient through Q to actions.
+- **Distribution:** Use reparameterized sampling, tanh and action-scale Jacobians, and sum across action dimensions.
+- **Termination:** Distinguish `terminated` from time-limit `truncated`. Time limits in continuing tasks normally allow bootstrapping; use the actual final observation, not a new state produced by automatic reset.
+- **Numerics and shapes:** Bound log standard deviation appropriately and align reward, mask, Q, and log-probability batch shapes to avoid accidental broadcasting.
+- **Version:** Original SAC updates target V; modern SAC updates target Q. Automatic temperature is not an original-paper default component.
+- **Experiments:** Report environment steps, computation, multi-seed statistics, and evaluation action rules. Environment return is not the entropy-augmented objective.
+
+## 19. Turn Obsidian's future directions into testable questions
+
+I retained the earlier questions about generalization, real robots, sample efficiency, and theory, but narrowed them into experiments:
+
+1. **Generalization and visual observations:** Does the advantage survive changes in observations or dynamics? Fix the budget and distinguish training performance from returns under unseen conditions.
+2. **Data reuse:** Does increasing update-to-data ratio really improve sample efficiency? Also measure computation, Q bias, and across-seed variation.
+3. **Temperature and reward scale:** How do fixed and automatic temperatures compare under identical reward scaling? Is target entropy consistent with the action coordinates?
+4. **Theory and approximation:** When do Critic errors and finite SGD steps invalidate exact policy iteration's monotonic improvement? A tabular theorem alone does not settle this.
+5. **Real-world control and safety:** How should high-entropy exploration be constrained in physical systems? Benchmark success is not a real-world safety guarantee.
+
+These are post-reading research questions, not results already solved or empirically established by the 2018 paper.
+
+## 20. Six equations and five self-check questions
+
+The six relationships to connect are:
+
+1. Objective: $r+\alpha\mathcal H(\pi)$.
+2. Soft value: $V^\pi=\mathbb E_\pi[Q^\pi-\alpha\log\pi]$.
+3. Soft Bellman: $Q^\pi=r+\gamma\mathbb E[V^\pi(s')]$.
+4. Ideal distribution: $\pi_{\mathrm{ideal}}\propto\exp(Q/\alpha)$.
+5. Actor loss: $\mathbb E[\alpha\log\pi-\min_iQ_i]$.
+6. Original Q target: $r+\gamma m V_{\bar\psi}(s')$; modern SAC replaces it with next-state target Q-functions and entropy.
+
+Try answering without looking at the equations:
+
+- Why does maximum entropy change the Critic's bootstrap as well as the Actor?
+- Why can Actor states come from old replay while actions must be freshly sampled from the current policy?
+- How can an Actor update freeze Q parameters while retaining Q's action gradient?
+- Why does the original paper contain a value network while modern code may not?
+- What do the stability curves and convergence theorem respectively support—and what do they leave unguaranteed?
+
+**In summary: SAC redefines a good policy through maximum entropy, then approximates soft policy iteration with off-policy actor–critic learning. Its strength comes from the objective, estimation, and training structure working together—not an entropy bonus alone.**
+
+## References and provenance
+
+- Haarnoja et al. (2018), [original ICML paper](https://proceedings.mlr.press/v80/haarnoja18b.html): Section 3 for the objective, Section 4 for theory and algorithm, and Section 5 for experiments. Images are Algorithm 1 and Figures 1–3 from the local original-paper PDF; the original artwork is preserved with cropping only.
+- Haarnoja et al., [Soft Actor-Critic Algorithms and Applications](https://arxiv.org/abs/1812.05905): source for later algorithm and temperature developments, distinguished from the original ICML version.
+- [Spinning Up documentation](https://spinningup.openai.com/en/latest/algorithms/sac.html), [SB3 documentation](https://stable-baselines3.readthedocs.io/en/master/modules/sac.html), and the repositories linked above provide implementation context, not replacement evidence for the original experiments.
+- Merged material: my `soft_actor_critic_paper_notes_zh.md` and Obsidian `SAC.md`. Explanations, synthesis, and future questions were rewritten after checking the paper; broad statements in the notes were not treated as additional experimental results.

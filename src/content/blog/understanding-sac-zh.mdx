@@ -1,0 +1,442 @@
+---
+title: '从最大熵到 SAC：读懂 Soft Actor-Critic'
+description: '合并 SAC 阅读笔记与 Obsidian 问答，推导 Soft Policy Iteration、三类网络损失与重参数化，结合原论文图片、实验和源码区分原始 SAC 与现代实现。'
+publishDate: '2026-10-06'
+updatedDate: '2026-10-06'
+category: paper-reading
+collection: reinforcement-learning
+researchTopics:
+  - reinforcement-learning
+paper:
+  title: 'Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor'
+  authors: ['Tuomas Haarnoja', 'Aurick Zhou', 'Pieter Abbeel', 'Sergey Levine']
+  year: 2018
+  venue: ICML
+  url: 'https://proceedings.mlr.press/v80/haarnoja18b.html'
+  arxivId: '1801.01290'
+featured: true
+tags:
+  - reinforcement learning
+  - SAC
+  - maximum entropy
+  - off policy
+  - actor critic
+  - paper reading
+language: zh
+translationKey: understanding-sac
+---
+
+import Callout from '@/components/article/Callout.astro'
+import Figure from '@/components/article/Figure.astro'
+
+# 从最大熵到 SAC：读懂 Soft Actor-Critic
+
+> **论文：** *Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor*<br />
+> **作者：** Tuomas Haarnoja、Aurick Zhou、Pieter Abbeel、Sergey Levine<br />
+> **发表：** ICML 2018，PMLR 80:1861–1870<br />
+> **原文：** [会议论文](https://proceedings.mlr.press/v80/haarnoja18b.html) · [arXiv:1801.01290](https://arxiv.org/abs/1801.01290)
+
+这篇笔记将我整理的可发布版笔记与 Obsidian 中的六组问题合并：问题与相关工作、理论推导、算法实现、实验、后续探索与总结。原论文是主要依据；现代实现单独标注，不把后续改动混进 2018 年的算法。
+
+## 1. 一句话理解 SAC
+
+SAC 想同时得到 **off-policy 的样本利用率** 与 **随机策略、最大熵目标带来的探索和训练稳定性**。
+
+$$
+\text{Maximum Entropy RL}
+\rightarrow\text{Soft Policy Evaluation}
+\rightarrow\text{Soft Policy Improvement}
+\rightarrow\text{Soft Policy Iteration}
+\rightarrow\text{Deep SAC}.
+$$
+
+<Callout type='definition' title='最重要的理解'>
+SAC 不是只给 Actor 加一个 entropy bonus，而是把熵同时放进策略改进与价值评估：Actor 寻找高价值且不必过早确定的行为，Critic 评估包含未来熵收益的回报。
+</Callout>
+
+## 2. 从 PPO、DDPG 到 SAC：论文解决什么问题？
+
+Obsidian 的第一个问题是：为什么还需要一个新的 Actor-Critic？
+
+- **PPO / TRPO：** 相对稳健，但主要是 on-policy；一批 rollout 可以在当前轮复用，不能无限期放进 replay buffer 当作普通离策略经验。
+- **DDPG：** 用 replay buffer 提升样本利用率，但确定性策略与估计误差的反馈可能使训练脆弱，探索也需要额外设计。
+- **Soft Q-Learning（SQL）：** 已经使用最大熵思想，但从能量形式的 Q 推出可采样策略并不总是容易。
+- **SAC：** 将 replay buffer、可直接采样的随机 Actor 与 soft Critic 结合；双 Q 和缓慢更新的 target 网络进一步控制估计误差与训练目标的波动。
+
+相关工作的主线不是“谁替代了谁”，而是 **价值学习、策略梯度、最大熵控制** 的汇合。论文第 2 节还讨论了最大熵逆强化学习、熵正则策略学习与同期 TD3；这些背景不意味着所有方法的假设或证明都可以直接移植到 SAC。
+
+## 3. 最大熵目标与温度参数
+
+先用常见的无限时域折扣写法建立直觉：
+
+$$
+J(\pi)=\mathbb E_{\tau\sim\pi}\left[
+\sum_{t=0}^{\infty}\gamma^t
+\left(r(s_t,a_t)+\alpha\mathcal H(\pi(\cdot\mid s_t))\right)
+\right].
+$$
+
+这里 $\alpha>0$ 是 temperature，控制奖励与熵的相对权重。原论文第 3.2 节的 Eq. (1) 先使用有限时域写法，随后通过缩放 reward 将 $\alpha$ 隐去；本文保留它，便于和实现对应。上述折扣目标是解释用的常见约定，不声称与论文所有状态分布加权记号逐字相同。
+
+- $\alpha$ 较大：更重视保留随机性；不是不顾奖励地随机行动。
+- $\alpha$ 较小：更偏向利用当前高价值动作。
+- 在适当条件下，$\alpha\to0$ 时恢复普通奖励最大化的极限。
+
+### 为什么到处都有负 log probability？
+
+$$
+\mathcal H(\pi(\cdot\mid s))
+=-\mathbb E_{a\sim\pi}[\log\pi(a\mid s)].
+$$
+
+所以熵奖励对应采样后的 $-\alpha\log\pi(a\mid s)$。注意连续动作使用的是 **概率密度和微分熵**：密度可以大于 1，微分熵也可以为负，不能把每一次 $-\log\pi$ 都解释为必定非负的 bonus。
+
+## 4. Soft Value 与 Soft Bellman Equation
+
+沿用论文的约定：$Q^\pi(s,a)$ 在当前动作已给定时，计入当前 reward 和未来熵；当前状态的熵由 $V^\pi$ 补入。
+
+$$
+V^\pi(s)=\mathbb E_{a\sim\pi}
+\left[Q^\pi(s,a)-\alpha\log\pi(a\mid s)\right],
+$$
+
+$$
+Q^\pi(s,a)=r(s,a)+\gamma\mathbb E_{s'\sim p}[V^\pi(s')].
+$$
+
+**Soft Policy Evaluation** 就是在固定 $\pi$ 时反复应用这一 backup，求它的 soft Q；对应原论文第 4.1 节 Eq. (2)–(3)。它评估的不只是“将来能拿多少环境奖励”，还包括策略在未来状态中保留随机性的价值。
+
+### 一个可手算的例子
+
+设 $\alpha=1$，下一状态的两个动作满足 $Q(s',a_1)=10$、$Q(s',a_2)=9$，当前策略概率为 $0.7$ 与 $0.3$。
+
+$$
+V^\pi(s')=0.7(10-\log0.7)+0.3(9-\log0.3)
+\approx10.3109.
+$$
+
+若 $r=2$、$\gamma=0.9$，则 backup 为 $2+0.9\times10.3109\approx11.2798$。这里的 $10.3109$ 已含熵项，不能再重复加一次该状态熵。
+
+## 5. 为什么理想策略是 exp(Q / alpha)？
+
+固定一个状态及其 Q，最大化：
+
+$$
+\sum_a\pi(a\mid s)Q(s,a)
+-\alpha\sum_a\pi(a\mid s)\log\pi(a\mid s),
+\qquad\sum_a\pi(a\mid s)=1.
+$$
+
+对这个离散例子使用拉格朗日乘子，可得 $\log\pi(a\mid s)=Q(s,a)/\alpha+C$，因此：
+
+$$
+\pi_{\mathrm{ideal}}(a\mid s)
+=\frac{\exp(Q(s,a)/\alpha)}{Z(s)},
+\qquad Z(s)=\sum_a\exp(Q(s,a)/\alpha).
+$$
+
+连续动作下，求和换成积分，并要求归一化积分存在。对 $Q=(10,9)$、$\alpha=1$，两个概率约为 $0.7311$ 和 $0.2689$：次优但接近最优的动作不会立即被抛弃。
+
+<Callout type='definition' title='固定策略评估，不等于直接 log-sum-exp'>
+固定策略时，Soft Value 是 Q 减 log probability 的期望。只有对所有允许的分布完成无约束的熵正则最大化后，最优值才写成 alpha log Z；不能把任意策略的 Value 都直接替换成 log-sum-exp。
+</Callout>
+
+## 6. KL Projection 怎样得到 Actor Loss？
+
+真实 Actor 通常限制在可处理的分布族 $\Pi$ 中，例如 tanh 变换的高斯。它不一定能精确表示理想 Boltzmann 分布，于是论文第 4.1 节 Eq. (4) 使用：
+
+$$
+\pi_{\mathrm{new}}=\arg\min_{\pi'\in\Pi}
+D_{\mathrm{KL}}\left(
+\pi'(\cdot\mid s)\;\middle\|\;
+\frac{\exp(Q^{\pi_{\mathrm{old}}}(s,\cdot)/\alpha)}{Z(s)}
+\right).
+$$
+
+展开并乘以 $\alpha$：
+
+$$
+\alpha D_{\mathrm{KL}}
+=\mathbb E_{a\sim\pi'}[\alpha\log\pi'(a\mid s)-Q(s,a)]
++\alpha\log Z(s).
+$$
+
+在该次策略改进中固定 Q，$Z(s)$ 不依赖新的 Actor 参数，所以可以从梯度目标中去掉。对 replay buffer 的状态取平均后：
+
+$$
+J_\pi(\phi)=\mathbb E_{s\sim\mathcal D,\,a\sim\pi_\phi}
+[\alpha\log\pi_\phi(a\mid s)-Q(s,a)].
+$$
+
+**最小化**这个 loss，等价于最大化 $Q-\alpha\log\pi$。KL 的方向是“新策略到能量目标”，不是反过来；$Z$ 能去掉也不等于动作分布的 Jacobian 可以省略。
+
+## 7. 理论保证的边界
+
+Obsidian 笔记中的“算法收敛到最优策略”需要加上限定。
+
+原论文第 4.1 节的 Lemma 1、Lemma 2、Theorem 1 在精确评估与精确改进、有限动作集合等假设下，分别论证 soft evaluation 的收敛、soft improvement 的单调改进，以及在所考虑策略集合中的 soft policy iteration 结果。
+
+**这不是对连续动作神经网络 SAC、有限 replay buffer 和若干步 SGD 的全局收敛保证。** 实际算法是理论迭代的函数逼近版本；性能与稳定性仍要通过实验验证。
+
+## 8. 原始 SAC 到底有哪些网络？
+
+以下针对 **ICML 2018 原始版本**，符号与论文对应：
+
+| 组件 | 参数 | 输入与输出 | 职责 |
+| --- | --- | --- | --- |
+| 随机 Actor | $\phi$ | 状态 → 动作分布 | 采样动作，计算 log probability |
+| 两个 soft Q | $\theta_1,\theta_2$ | 状态、动作 → Q | 拟合 soft Bellman target，缓解高估 |
+| Soft Value | $\psi$ | 状态 → V | 近似当前策略下的 soft value |
+| Target Value | $\bar\psi$ | 下一状态 → target V | 给 Q 提供缓慢变化的 bootstrap target |
+| Replay buffer | $\mathcal D$ | 转移样本 | 复用历史交互数据，不是网络 |
+
+原始版本的 target 是 **V 网络**；不要读到双 Q 就自动补上现代版本的两个 target Q。
+
+## 9. 三类损失：Q、Value、Actor
+
+令 $m$ 表示是否允许 bootstrap：真实终止时 $m=0$，普通非终止转移时 $m=1$。这个 mask 是实现补充，论文正文的简化公式没有显式写出它。
+
+### 9.1 Q：用旧动作拟合 target
+
+$$
+y_Q=r+\gamma m V_{\bar\psi}(s'),
+$$
+
+$$
+J_Q(\theta_i)=\mathbb E_{(s,a,r,s')\sim\mathcal D}
+\left[\frac12\left(Q_{\theta_i}(s,a)-\operatorname{sg}(y_Q)\right)^2\right].
+$$
+
+$\operatorname{sg}$ 表示停止梯度。这里的 $a$ 是 replay buffer 保存的历史动作，不能用新 Actor 动作替换，却仍保留原来的 $r,s'$。
+
+### 9.2 Value：用当前策略动作估计 soft value
+
+$$
+y_V=\min_{i\in\{1,2\}}Q_{\theta_i}(s,a_\pi)
+-\alpha\log\pi_\phi(a_\pi\mid s),\qquad a_\pi\sim\pi_\phi(\cdot\mid s),
+$$
+
+$$
+J_V(\psi)=\mathbb E_{s\sim\mathcal D}
+\left[\frac12\left(V_\psi(s)-\operatorname{sg}(y_V)\right)^2\right].
+$$
+
+Eq. (5) 写的是动作期望；实现用一次当前策略采样构造 stochastic target。对 Value 参数而言，在 target 停止梯度的条件下，这给出相应期望梯度的采样估计；不应混淆“单个 target 的平方”和“完整期望的平方”在数值上完全相等。
+
+### 9.3 Actor：提高 soft Q，并保留熵
+
+$$
+J_\pi(\phi)=\mathbb E_{s\sim\mathcal D,\,\epsilon\sim\mathcal N}
+\left[\alpha\log\pi_\phi(a_\pi\mid s)
+-\min_i Q_{\theta_i}(s,a_\pi)\right],
+\qquad a_\pi=f_\phi(\epsilon;s).
+$$
+
+论文先用单 Q 记号推导 Eq. (5)–(13)，再在第 4.2 节说明 Value 和 Actor 更新实际使用两个 Q 的最小值。两个 Q 各自拟合 target，取 min 是保守化估计，并不证明所有高估都消失。
+
+## 10. 重参数化：随机 Actor 怎样穿过 Critic 反传？
+
+以对角高斯为例：
+
+$$
+u=\mu_\phi(s)+\sigma_\phi(s)\odot\epsilon,
+\qquad\epsilon\sim\mathcal N(0,I),\qquad a=\tanh u.
+$$
+
+随机性来自与参数无关的 $\epsilon$，动作则是参数的可微函数。因此 Actor 可以通过 $Q(s,a)$ 对动作的导数得到更新方向；不必只依赖 likelihood-ratio 估计器。
+
+$$
+\nabla_\phi Q_\theta(s,f_\phi(\epsilon;s))
+=\nabla_a Q_\theta(s,a)\,\nabla_\phi f_\phi(\epsilon;s).
+$$
+
+训练 Actor 时 **冻结 Q 参数，不切断 Q 对输入动作的梯度**。把整个 Q 前向过程放进 `no_grad`，或把 $a_\pi$ detach，都会丢掉这条关键路径。反过来，更新 Q / V 的监督 target 则应停止梯度。
+
+### tanh 后的概率密度必须修正
+
+若 $a=b+c\odot\tanh u$，其中 $c_j>0$ 将动作缩放到环境范围，那么：
+
+$$
+\log\pi(a\mid s)=\log\mathcal N(u;\mu,\sigma)
+-\sum_j\log(1-\tanh^2u_j)-\sum_j\log c_j.
+$$
+
+这来自变量变换，不是可选的稳定性技巧。实现还应使用数值稳定的 Jacobian 计算，并对动作维度求和，得到每个样本的 joint log probability；不能直接使用未压缩高斯的 log probability。
+
+## 11. Off-policy 的关键：状态来自旧数据，动作未必来自旧策略
+
+| 用途 | 状态来源 | 动作来源 |
+| --- | --- | --- |
+| 当前 Q 的监督回归 | Replay buffer 的 $s$ | buffer 中与 reward、next state 配对的旧 $a$ |
+| 原始 SAC 的 Value target | Replay buffer 的 $s$ | 当前 Actor 重新采样的 $a_\pi$ |
+| Actor loss | Replay buffer 的 $s$ | 当前 Actor 重新采样的 $a_\pi$ |
+| 现代 SAC 的 next-state target | Replay buffer 的 $s'$ | 当前 Actor 在 $s'$ 重新采样的 $a'$ |
+
+因此 SAC 可以在历史状态上学习当前策略，无需把 PPO 的 old/new policy ratio 套进这些标准损失。它并非可以忽略数据覆盖：buffer 没见过的状态、动作仍可能让 Critic 外推失真。
+
+## 12. 一次完整的原始 SAC 更新
+
+<Figure src='/images/sac-paper/algorithm-1-original-sac.png' alt='ICML 2018 SAC 原论文 Algorithm 1，展示 Value、双 Q、Actor 与 target Value 的更新。' caption='算法 1 · 原论文 Algorithm 1，PDF 第 5 页。原始版本包含独立 Value 网络与 target Value；图片直接截取自原论文。' width={593} height={476} />
+
+```text
+Initialize actor, two critics, value, target value, and replay buffer
+Repeat:
+    Sample an action from the current stochastic actor
+    Step the environment and store the transition
+    For each gradient step:
+        Sample a minibatch from the replay buffer
+        Update value using current-policy actions and a detached soft-value target
+        Update both critics using stored actions and the target value network
+        Update actor with reparameterized actions and the minimum critic value
+        target_value = tau * value + (1 - tau) * target_value
+```
+
+这是对应论文 Algorithm 1 的流程摘要，不是可直接运行的复现代码。每次环境交互后可以做一个或多个 gradient step；**样本效率不等于计算开销小**，更多数据复用仍需支付更多更新成本。
+
+Target Value 用 Polyak / EMA 更新：
+
+$$
+\bar\psi\leftarrow\tau\psi+(1-\tau)\bar\psi.
+$$
+
+此处 $\tau$ 是新参数的权重。某些代码用 `polyak` 表示旧参数权重，数值应与 $1-\tau$ 对应，不能只看参数名字。
+
+## 13. 不要把原始 SAC 与现代 SAC 混在一起
+
+后续论文 [*Soft Actor-Critic Algorithms and Applications*](https://arxiv.org/abs/1812.05905) 与现代实现常采用下列改动：
+
+| 项目 | ICML 2018 原始 SAC | 常见现代 SAC |
+| --- | --- | --- |
+| 独立 Value 网络 | 有 | 通常不再使用 |
+| Target 网络 | Target Value | 两个 target Q |
+| Q target | $r+\gamma m V_{\bar\psi}(s')$ | 从当前策略采样 next action，直接估计 next soft value |
+| 熵系数 | 通过固定系数 / reward scaling 控制 | 可固定，也可自动学习 $\alpha$ |
+
+现代 target 为：
+
+$$
+y_Q^{\mathrm{modern}}=r+\gamma m
+\left[\min_i Q_{\bar\theta_i}(s',a')
+-\alpha\log\pi_\phi(a'\mid s')\right],
+\qquad a'\sim\pi_\phi(\cdot\mid s').
+$$
+
+这个版本没有 $J_V$，target Q 使用 EMA，next action 仍由当前 Actor 产生，而不是必须另设 target Actor。
+
+### 自动温度调节是后续扩展
+
+设目标熵为 $\mathcal H_{\mathrm{target}}$，一种温度目标为：
+
+$$
+J_\alpha=\mathbb E_{a\sim\pi}
+\left[-\alpha\left(\log\pi(a\mid s)+\mathcal H_{\mathrm{target}}\right)\right].
+$$
+
+更新温度时固定 Actor 的 log probability。直觉是实际熵太低就提高 $\alpha$，太高就降低。许多实现优化 `log_alpha` 以保持正值，并使用如下 loss：
+
+```python
+alpha_loss = -(log_alpha * (log_probability + target_entropy).detach()).mean()
+```
+
+这是一种常用 log-temperature 优化形式，不是对 $J_\alpha$ 简单代入后的数值恒等式。连续动作实现常用 `-action_dim` 作为目标熵启发式，但它依赖动作坐标与密度约定，不是普适常数。Spinning Up 的教学版使用固定 $\alpha$；Stable-Baselines3 支持自动调节。
+
+## 14. 原论文实验：看环境步数，也看随机种子
+
+<Figure src='/images/sac-paper/figure-1-continuous-control.png' alt='SAC 原论文 Figure 1：Hopper、Walker2d、HalfCheetah、Ant 与两个 Humanoid 环境上的六组训练曲线。' caption='图 1 · 原论文 Figure 1，PDF 第 6 页。横轴为环境交互步数，纵轴为评估的环境回报；实线为五个随机种子的均值，阴影为最小值到最大值，而不是标准差或置信区间。图片截取自原论文。' width={1218} height={653} />
+
+论文第 5 节在 Hopper-v1、Walker2d-v1、HalfCheetah-v1、Ant-v1、Humanoid-v1，以及 rllab Humanoid 上比较 DDPG、PPO、SQL、TD3 与 SAC。
+
+正文报告五个随机种子，每 1000 个环境步进行一次评估 rollout。最大熵方法的评估使用策略均值动作或文中说明的相应选择方式，曲线展示 **不包含熵项的环境回报**，不是训练时优化的整个最大熵目标。
+
+我的阅读结论是：SAC 在较难的连续控制任务上展现了有力的样本效率与性能优势；但图 1 不是每条曲线、每个环境都证明 SAC 严格支配全部基线，也不能外推成“所有任务上必胜”。环境版本、评估约定与随机种子数量都影响复现比较。
+
+## 15. 消融：随机策略、reward scale 与 target 更新
+
+<Figure src='/images/sac-paper/figure-2-stochastic-vs-deterministic.png' alt='SAC 原论文 Figure 2：rllab Humanoid 上随机 SAC 与确定性变体的跨随机种子对比。' caption='图 2 · 原论文 Figure 2，PDF 第 7 页。随机策略版本呈现较小的跨种子波动。此处确定性变体还带有论文规定的网络和更新选择，因此不能把差异解读为对任意算法的普遍保证。' width={505} height={355} />
+
+随机策略既在 Actor 中避免过早压缩策略方差，也通过 soft value 影响到未来状态的选择。图 2 支持这种训练设计的稳定性价值；它不是“推理时也一定要随机采样”的证据。
+
+<Figure src='/images/sac-paper/figure-3-hyperparameter-sensitivity.png' alt='SAC 原论文 Figure 3：Ant-v1 上均值动作评估、奖励尺度和 target smoothing 系数的影响。' caption='图 3 · 原论文 Figure 3，PDF 第 8 页。三个面板分别研究评估方式、reward scale 和 target smoothing 系数；原始 SAC 仍需调节奖励尺度，过快或过慢的 target 更新各有代价。' width={1218} height={328} />
+
+三个值得记住的结果：
+
+1. **训练随机，评估可确定：** 使用均值动作的评估有时更高，但它不一般等于变换后分布的 MAP 动作，也不保证对任意回报目标最优。
+2. **Reward scale 对应有效温度：** 固定熵权重下将 reward 乘以 $c>0$，相对于原 reward 就等价于有效温度变成 $\alpha/c$。缩放太小可能忽略 reward，太大可能过早变得确定。
+3. **Target 要缓慢但不能静止：** 大 $\tau$ 可能不稳，小 $\tau$ 可能学习慢；论文在这些任务中使用 $\tau=0.005$，这不是跨所有问题的最优保证。
+
+## 16. 与 DQN、GAE、PPO、DDPG 的关系
+
+| 方法 | 核心学习对象 / 更新思路 | 和 SAC 的连接 |
+| --- | --- | --- |
+| DQN | 离散动作 Q、replay、target network | 提供数据复用与 bootstrap 的思路；SAC 不枚举连续动作做 hard max |
+| GAE | 带偏差–方差折中的 advantage 估计 | 常服务于 on-policy Actor；标准 SAC 更新不需要 GAE 或 PPO ratio |
+| PPO | 用 clipped surrogate 控制旧策略 rollout 上的更新 | SAC 通过 soft Q 学 Actor，并可长期使用 replay buffer |
+| DDPG | 确定性 Actor 沿 Critic 的动作梯度更新 | SAC 保留可微动作路径，但学习随机分布并加入最大熵目标 |
+| TD3 | 双 Q、延迟策略更新等设计 | SAC 同样用两个 Q 的 min，但随机策略与熵 target 不同 |
+
+学习路线可以写成：**DQN 的 replay 与 target → GAE 的优势估计 → PPO 的策略更新控制 → SAC 的离策略最大熵策略迭代**。这是一条理解路径，不是声称 SAC 必须依赖 GAE 的公式。
+
+继续阅读：[GAE 中文笔记](/zh/blog/understanding-gae-zh/) · [PPO 中文笔记](/zh/blog/understanding-ppo-zh/)。
+
+## 17. 开源代码：按版本阅读，不把所有仓库当作原论文复现
+
+| 代码 / 文档 | 定位 | 建议重点阅读 |
+| --- | --- | --- |
+| [haarnoja/sac](https://github.com/haarnoja/sac) | 作者的原始 SAC 仓库，历史依赖环境 | [SAC 更新代码](https://github.com/haarnoja/sac/blob/master/sac/algos/sac.py)，对应原始 V / target V 结构 |
+| [rail-berkeley/softlearning](https://github.com/rail-berkeley/softlearning) | 作者团队的后续框架 | 对照后续算法与配置，不默认等同于 ICML 原始实验 |
+| [OpenAI Spinning Up SAC](https://spinningup.openai.com/en/latest/algorithms/sac.html) | 现代无独立 V 的教学版，固定 $\alpha$ | [PyTorch SAC](https://github.com/openai/spinningup/blob/master/spinup/algos/pytorch/sac/sac.py) 中的 Q target、Actor loss、Polyak 更新 |
+| [Stable-Baselines3 SAC](https://stable-baselines3.readthedocs.io/en/master/modules/sac.html) | 工程化的现代实现，支持自动熵系数 | [SAC 源码](https://github.com/DLR-RM/stable-baselines3/blob/master/stable_baselines3/sac/sac.py) 中的温度、终止 mask 与训练逻辑 |
+| [CleanRL SAC](https://github.com/vwxyzjn/cleanrl/blob/master/cleanrl/sac_continuous_action.py) | 易于追踪训练循环的单文件实现 | 动作缩放、log probability 修正、温度与双 Q 更新 |
+
+读代码时先找 `target`，再找 `actor_loss`，最后找 `alpha` 和 target 更新。如果没有 Value 网络，不是漏写了原论文公式，而可能是选择了后续版本。仓库依赖、环境接口与默认值会随版本改变；要做严格复现，应记录具体 commit、环境版本和所有超参数。
+
+## 18. 实现前的检查清单
+
+- **Loss 符号：** Actor 最小化 $\alpha\log\pi-Q$，不是反号。
+- **两类动作：** Q 回归使用历史动作；Actor / Value 使用当前策略采样。
+- **梯度路径：** Q、V 的 target detach；Actor 保留通过 Q 到动作的梯度。
+- **分布：** 用 reparameterized sample，修正 tanh 与动作尺度 Jacobian，对动作维求和。
+- **终止：** 分清 `terminated` 与时间截断 `truncated`；对于继续型任务的时间限制，通常仍 bootstrap，并使用真正的 final observation，而非自动 reset 后的新状态。
+- **数值和形状：** 控制 log standard deviation 的范围，确保 reward、mask、Q、log probability 的 batch 形状一致，避免意外广播。
+- **版本：** 原始 SAC 更新 target V；现代 SAC 更新 target Q，自动温度不是原始论文默认组成。
+- **实验：** 同时报告环境步、计算成本、多种子统计与评估动作规则；不要把 env return 当成含熵 objective。
+
+## 19. 保留 Obsidian 的探索问题，但把它们变成可验证问题
+
+我保留了原笔记中关于泛化、真实机器人、样本效率与理论的思考，并将宽泛方向缩成实验问题：
+
+1. **泛化与视觉输入：** 改变观测或动力学后优势还在吗？应固定预算，区分训练表现与未见条件下的回报。
+2. **数据复用：** 增大 update-to-data ratio 是否真提升样本效率？同时记录计算时间、Q 偏差与跨种子波动。
+3. **温度与奖励尺度：** 固定 $\alpha$ 和自动温度在相同 reward scaling 下的表现如何？目标熵是否与动作坐标一致？
+4. **理论与近似：** 精确策略迭代的单调改进，在 Critic 误差和有限 SGD 下何时失效？不能只引用表格情形的定理。
+5. **真实控制与安全：** 高熵探索在有物理约束的系统中如何限制？原论文 benchmark 的成功不等于现实系统的安全保证。
+
+这些是阅读后的研究问题，而不是这篇 2018 年论文已经解决或实证确认的结论。
+
+## 20. 六个公式与五个自测问题
+
+最值得串起来记忆的六个关系是：
+
+1. 目标：$r+\alpha\mathcal H(\pi)$。
+2. Soft Value：$V^\pi=\mathbb E_\pi[Q^\pi-\alpha\log\pi]$。
+3. Soft Bellman：$Q^\pi=r+\gamma\mathbb E[V^\pi(s')]$。
+4. 理想分布：$\pi_{\mathrm{ideal}}\propto\exp(Q/\alpha)$。
+5. Actor loss：$\mathbb E[\alpha\log\pi-\min_iQ_i]$。
+6. 原始 Q target：$r+\gamma m V_{\bar\psi}(s')$；现代版本替换为 next-state 的双 target Q 与熵项。
+
+读完以后，试着不看公式回答：
+
+- 为什么最大熵既改变 Actor，也改变 Critic 的 bootstrap？
+- 为什么 Actor 状态来自旧 buffer，却必须用当前策略重新采样动作？
+- 为什么 Actor 更新时冻结 Q 参数，仍然可以得到 Q 的动作梯度？
+- 为什么原始 SAC 有 Value 网络，而现代代码可能没有？
+- 论文的稳定性曲线与理论收敛结果，分别支持什么、又没有保证什么？
+
+**最后总结：SAC 用最大熵重新定义“好策略”，再用离策略 Actor-Critic 近似 soft policy iteration；它的力量来自目标、估计与训练结构的配合，而不是单独一个 entropy bonus。**
+
+## 参考资料与来源说明
+
+- Haarnoja et al. (2018), [ICML 原论文](https://proceedings.mlr.press/v80/haarnoja18b.html)：第 3 节目标，第 4 节理论与算法，第 5 节实验。本文图片来自本地原论文 PDF 的 Algorithm 1 与 Figure 1–3；保留原图，仅调整截取范围。
+- Haarnoja et al., [Soft Actor-Critic Algorithms and Applications](https://arxiv.org/abs/1812.05905)：后续版本与温度调节的来源，不与 ICML 原始版本混同。
+- [Spinning Up 算法文档](https://spinningup.openai.com/en/latest/algorithms/sac.html)、[SB3 文档](https://stable-baselines3.readthedocs.io/en/master/modules/sac.html) 及上节链接的各仓库源码：用于实现补充，不替代原论文的实验依据。
+- 合并材料：我的 `soft_actor_critic_paper_notes_zh.md` 与 Obsidian `SAC.md`。其中的解释、概括和探索问题经过论文核对后重写，未把笔记中的泛化表述当成额外实验结论。
