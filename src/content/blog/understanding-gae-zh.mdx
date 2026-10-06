@@ -1,0 +1,594 @@
+---
+title: '从 Policy Gradient 到 GAE：读懂广义优势估计'
+description: '结合原论文、博客笔记与 Obsidian 思考，系统梳理 GAE 的动机、推导、偏差—方差权衡、TRPO 配套优化与实验结果。'
+publishDate: '2026-10-06'
+updatedDate: '2026-10-06'
+category: paper-reading
+collection: reinforcement-learning
+researchTopics:
+  - reinforcement-learning
+paper:
+  title: 'High-Dimensional Continuous Control Using Generalized Advantage Estimation'
+  authors: ['John Schulman', 'Philipp Moritz', 'Sergey Levine', 'Michael Jordan', 'Pieter Abbeel']
+  year: 2016
+  venue: ICLR
+  url: 'https://arxiv.org/abs/1506.02438'
+  arxivId: '1506.02438'
+featured: true
+tags:
+  - reinforcement learning
+  - policy gradient
+  - advantage estimation
+  - GAE
+  - TRPO
+  - paper reading
+language: zh
+translationKey: understanding-gae
+---
+
+import Callout from '@/components/article/Callout.astro'
+import Figure from '@/components/article/Figure.astro'
+
+# 从 Policy Gradient 到 GAE：读懂广义优势估计
+
+> **Paper**: *High-Dimensional Continuous Control Using Generalized Advantage Estimation*  
+> **Authors**: John Schulman, Philipp Moritz, Sergey Levine, Michael I. Jordan, Pieter Abbeel  
+> **Venue**: ICLR 2016；arXiv 初版发表于 2015 年
+
+这篇论文常常只以一句公式出现：
+
+$$
+\hat A_t^{\mathrm{GAE}(\gamma,\lambda)}
+=
+\sum_{l=0}^{\infty}(\gamma\lambda)^l\delta_{t+l}^{V}.
+$$
+
+但这条公式不是凭空出现的。它是在回答一个很具体的问题：**Policy Gradient 需要一个能够评价动作好坏的学习信号，可是真实的 Advantage 通常不可直接获得；我们怎样在降低方差的同时，不让价值函数的误差把策略更新带偏？**
+
+这篇笔记把博客中的推导、Obsidian 里的问题意识，以及原论文的理论和实验放到同一条线索里：
+
+$$
+\boxed{
+\text{Policy Gradient}
+\rightarrow \text{Advantage}
+\rightarrow \text{多步估计}
+\rightarrow \text{GAE}
+\rightarrow \text{TRPO 稳定更新}
+}
+$$
+
+## 先给结论
+
+GAE 可以理解成一句话：
+
+> **一步 TD 太相信 Critic，一次完整 rollout 太相信随机轨迹；GAE 用 $\lambda$ 在两者之间连续调节信任程度。**
+
+需要同时记住三个边界：
+
+1. **GAE 只是 Advantage estimator。** 它提供 $\hat A_t$，不负责决定策略参数具体如何更新。
+2. **$\lambda$ 负责估计器的时间范围，$\gamma$ 不只是“另一个 $\lambda$”。** 在本文中，$\gamma$ 还决定折扣价值函数的尺度，并作为方差降低参数使用。
+3. **论文的完整方法不是只有 GAE。** 它将 GAE 与 policy、value function 的 trust-region 更新结合，使用 TRPO 优化策略。
+
+## 1. 论文究竟想解决什么
+
+论文在摘要中指出，Policy Gradient 的两个主要困难是：
+
+- **样本需求大**：随机梯度估计的方差会随时间跨度变得不利，单条轨迹中某个动作的影响容易和过去、未来动作的影响混在一起。方差大时，必须用更多轨迹取平均，更新才不会被噪声淹没。
+- **难以稳定、持续改进**：策略更新会改变后续采样到的数据分布；同时，Actor–Critic 中的价值函数近似又会引入偏差。即使样本无限，系统性偏差也可能让算法不收敛，或收敛到并非局部最优的解。
+
+这里的“训练不稳定”不是简单的 loss 抖动，而是一个闭环问题：
+
+$$
+\text{策略改变}
+\Rightarrow \text{数据分布改变}
+\Rightarrow \text{价值函数目标改变}
+\Rightarrow \text{优势估计改变}
+\Rightarrow \text{策略再次改变}.
+$$
+
+论文分别用两种机制应对这两个困难：
+
+| 困难 | 论文中的应对 | 直观作用 |
+| --- | --- | --- |
+| Policy Gradient 方差大 | 用价值函数和 GAE 估计 Advantage | 降低更新噪声，同时保留可调的偏差 |
+| 连续更新容易失控 | 对 policy 与 value function 使用 trust region | 限制每一轮更新不要离旧模型太远 |
+
+<Callout type='important' title='一个容易被忽略的细节'>
+本文的实验使用的是神经网络 policy 和 value function，直接从原始运动学状态输出关节 torque，而不是手工设计的 gait 参数。论文在 3D 机器人任务上使用了最多 33 个状态维度和 10 个执行器，这也是标题中“High-Dimensional Continuous Control”的具体背景。
+</Callout>
+
+## 2. Policy Gradient 为什么需要 Advantage
+
+令策略为 $\pi_\theta(a\mid s)$，轨迹为 $\tau$。策略梯度可以写成：
+
+$$
+\nabla_\theta J(\theta)
+=
+\mathbb E\left[
+\sum_t \Psi_t\nabla_\theta\log\pi_\theta(a_t\mid s_t)
+\right].
+$$
+
+其中，真正难以选择的不是 score function：
+
+$$
+\nabla_\theta\log\pi_\theta(a_t\mid s_t),
+$$
+
+而是学习信号 $\Psi_t$。它应该告诉我们：**这次采样到的动作，值得增加概率还是降低概率？**
+
+### 2.1 从 $V$、$Q$ 到 $A$
+
+状态价值函数：
+
+$$
+V^\pi(s_t)
+=
+\mathbb E_\pi\left[
+\sum_{l=0}^{\infty}r_{t+l}\mid s_t
+\right]
+$$
+
+回答的是：从状态 $s_t$ 出发，继续按照策略 $\pi$ 行动，平均能得到多少回报。
+
+动作价值函数：
+
+$$
+Q^\pi(s_t,a_t)
+=
+\mathbb E_\pi\left[
+\sum_{l=0}^{\infty}r_{t+l}\mid s_t,a_t
+\right]
+$$
+
+回答的是：在该状态下先执行动作 $a_t$，之后再按照 $\pi$ 行动，平均能得到多少回报。
+
+于是 Advantage 为：
+
+$$
+\boxed{A^\pi(s_t,a_t)=Q^\pi(s_t,a_t)-V^\pi(s_t)}.
+$$
+
+它不是在问“这条轨迹总共赚了多少”，而是在问：
+
+> **这个动作相对于该状态下策略的平均行为，好了多少或差了多少？**
+
+因此，Policy Gradient 的直观形式是：
+
+$$
+\underbrace{\nabla_\theta\log\pi_\theta(a_t\mid s_t)}_{\text{如何改变动作概率}}
+\times
+\underbrace{A_t}_{\text{应该奖励还是惩罚}}.
+$$
+
+当 $A_t>0$ 时，提高动作概率；当 $A_t<0$ 时，降低动作概率。
+
+### 2.2 为什么 Advantage 能降低方差
+
+直接使用回报 $G_t$ 时，信号中包含了很多与当前动作无关的共同波动，例如初始状态、后续动作和环境随机性。减去一个不依赖当前动作的 baseline，不改变梯度的期望，却能削弱这些共同波动：
+
+$$
+\mathbb E\left[
+\nabla_\theta\log\pi_\theta(a_t\mid s_t)b(s_t)
+\right]=0.
+$$
+
+当 baseline 取为 $V^\pi(s_t)$ 时，得到 Advantage。理想的 Advantage 通常具有很好的方差性质，但它本身需要知道 $Q^\pi$ 和 $V^\pi$，现实中只能估计。
+
+## 3. 两个极端：一步 TD 与 Monte Carlo
+
+给定一个近似价值函数 $V_\phi$，最短的估计器是 TD residual：
+
+$$
+\delta_t^V=r_t+\gamma V_\phi(s_{t+1})-V_\phi(s_t).
+$$
+
+如果 $V_\phi=V^{\pi,\gamma}$，则：
+
+$$
+\mathbb E[\delta_t^V\mid s_t,a_t]=A^{\pi,\gamma}(s_t,a_t).
+$$
+
+所以 $\delta_t^V$ 可以作为 Advantage estimator。但实际的 $V_\phi$ 不会完全准确，因而一步 TD 会引入 bootstrap bias。
+
+另一个极端是完整的 discounted return：
+
+$$
+\hat A_t^{(\infty)}
+=
+\sum_{l=0}^{\infty}\gamma^l r_{t+l}-V_\phi(s_t).
+$$
+
+它更多依赖真实 rollout，减少了对未来价值预测的依赖，但也把整条轨迹的随机性带进来，方差通常更高。
+
+| 估计器 | 主要依赖 | 价值函数误差带来的偏差 | 典型方差 |
+| --- | --- | --- | --- |
+| 一步 TD：$\delta_t^V$ | 当前奖励与下一状态价值 | 较明显 | 较低 |
+| 多步 TD | 一段真实奖励与末端价值 | 中等 | 中等 |
+| Monte Carlo：$G_t-V_\phi(s_t)$ | 完整 rollout | bootstrap 偏差最低 | 较高 |
+
+这正是 GAE 要解决的中间地带。
+
+## 4. 从 1-step 推到 k-step
+
+把连续的 TD residual 相加，可以得到一系列 $k$-step estimator：
+
+$$
+\hat A_t^{(k)}
+=
+\sum_{l=0}^{k-1}\gamma^l\delta_{t+l}^V.
+$$
+
+展开前几项：
+
+$$
+\begin{aligned}
+\hat A_t^{(1)} &= -V_\phi(s_t)+r_t+\gamma V_\phi(s_{t+1}),\\
+\hat A_t^{(2)} &= -V_\phi(s_t)+r_t+\gamma r_{t+1}+\gamma^2V_\phi(s_{t+2}),\\
+\hat A_t^{(3)} &= -V_\phi(s_t)+r_t+\gamma r_{t+1}+\gamma^2r_{t+2}+\gamma^3V_\phi(s_{t+3}).
+\end{aligned}
+$$
+
+这是一个 telescoping sum。一般形式是：
+
+$$
+\hat A_t^{(k)}
+=
+-V_\phi(s_t)
++\sum_{l=0}^{k-1}\gamma^l r_{t+l}
++\gamma^kV_\phi(s_{t+k}).
+$$
+
+随着 $k$ 增大，估计器越来越少依赖较近的 bootstrap value，价值函数不准确造成的偏差通常会减小；但它要累积更多随机奖励，方差通常上升。
+
+当 $k\to\infty$ 时：
+
+$$
+\hat A_t^{(\infty)}
+=
+-V_\phi(s_t)+\sum_{l=0}^{\infty}\gamma^lr_{t+l},
+$$
+
+也就是 Monte Carlo return 减去价值基线。
+
+## 5. GAE：不手动选择一个 k
+
+如果我们不知道应该选 $k=1$、$k=5$ 还是完整 rollout，一个自然的做法是对所有 $k$-step estimator 做指数加权平均：
+
+$$
+\hat A_t^{\mathrm{GAE}(\gamma,\lambda)}
+:=
+(1-\lambda)\sum_{k=1}^{\infty}\lambda^{k-1}\hat A_t^{(k)}.
+$$
+
+权重之和为 1，因此这确实是一个加权平均。把每个 $\hat A_t^{(k)}$ 再展开并交换求和次序：
+
+$$
+\begin{aligned}
+\hat A_t^{\mathrm{GAE}(\gamma,\lambda)}
+&=(1-\lambda)\sum_{k=1}^{\infty}\lambda^{k-1}
+\sum_{l=0}^{k-1}\gamma^l\delta_{t+l}^V\\
+&=\sum_{l=0}^{\infty}(\gamma\lambda)^l\delta_{t+l}^V.
+\end{aligned}
+$$
+
+这就是 GAE 最常用的形式：**未来 TD residual 的指数衰减和**。
+
+### 5.1 $\lambda=0$ 与 $\lambda=1$
+
+当 $\lambda=0$ 时：
+
+$$
+\hat A_t^{\mathrm{GAE}(\gamma,0)}=\delta_t^V.
+$$
+
+它只看一步，方差较低，但更依赖 Critic 的准确性。
+
+当 $\lambda=1$ 时：
+
+$$
+\hat A_t^{\mathrm{GAE}(\gamma,1)}
+=
+\sum_{l=0}^{\infty}\gamma^l\delta_{t+l}^V
+=
+\sum_{l=0}^{\infty}\gamma^lr_{t+l}-V_\phi(s_t).
+$$
+
+它等价于 discounted Monte Carlo return 减去 baseline。对理想的无限 horizon 推导而言，它不依赖 $V_\phi$ 是否准确来保证 $\gamma$-just，但方差较高。
+
+中间的 $0<\lambda<1$ 则在两者之间折中。
+
+<Callout type='definition' title='把 GAE 记成一句实现语言'>
+先计算每一步的 TD residual，再从 rollout 末端向前递推；每往未来走一步，就乘一次 $\gamma\lambda$。
+</Callout>
+
+### 5.2 $\gamma$ 和 $\lambda$ 不是同一个旋钮
+
+它们最终一起出现在 $(\gamma\lambda)^l$ 中，但职责不同：
+
+| 参数 | 主要作用 | 设得更大意味着 |
+| --- | --- | --- |
+| $\gamma$ | 定义 discounted value 的时间尺度；在本文中也用于降低延迟奖励带来的方差 | 更重视远期奖励，通常也会带来更长的信用分配和更高方差 |
+| $\lambda$ | 在不同长度的 $k$-step estimator 之间分配权重 | 更信任长 rollout，减弱对当前 Critic 的依赖，但通常增加方差 |
+
+论文特别强调：在一个原本想最大化 undiscounted total reward 的问题中，使用 $\gamma<1$ 作为方差降低参数，本身会给 policy gradient 引入偏差；而 $\lambda<1$ 的偏差主要来自价值函数近似不准确。因此，实践中 $\gamma$ 往往比 $\lambda$ 取更接近 1 的值。
+
+## 6. $\gamma$-just：究竟什么叫“无偏”
+
+这里需要区分两件事：
+
+1. 原始目标可能是不折扣的总回报；
+2. 论文先引入折扣后的 policy gradient $g_\gamma$，再研究 Advantage estimator 是否会额外扭曲这个目标。
+
+如果估计器 $\hat A_t$ 满足：
+
+$$
+\mathbb E\left[
+\hat A_t\nabla_\theta\log\pi_\theta(a_t\mid s_t)
+\right]
+=
+\mathbb E\left[
+A^{\pi,\gamma}(s_t,a_t)
+\nabla_\theta\log\pi_\theta(a_t\mid s_t)
+\right],
+$$
+
+论文称它是 **$\gamma$-just** 的。它意味着：这个 estimator 在替代真实的 discounted Advantage 时，不会额外改变 $g_\gamma$ 的期望。
+
+因此，“$\lambda=1$ 无偏”并不等于“它对原始 undiscounted 目标完全无偏”。折扣因子 $\gamma$ 这一步已经可能改变目标；$\gamma$-just 讨论的是在给定 $g_\gamma$ 下估计器是否继续引入额外偏差。
+
+## 7. 一个很有帮助的解释：Reward Shaping
+
+论文把近似价值函数看成 shaping potential $\Phi(s)=V_\phi(s)$，构造 shaped reward：
+
+$$
+\tilde r_t=r_t+\gamma V_\phi(s_{t+1})-V_\phi(s_t)=\delta_t^V.
+$$
+
+对 shaped reward 使用更陡的折扣 $\gamma\lambda$：
+
+$$
+\sum_{l=0}^{\infty}(\gamma\lambda)^l\tilde r_{t+l}
+=
+\sum_{l=0}^{\infty}(\gamma\lambda)^l\delta_{t+l}^V
+=
+\hat A_t^{\mathrm{GAE}(\gamma,\lambda)}.
+$$
+
+这个视角解释了两件事：
+
+- 价值函数不是只用来预测 return，也可以用来把“遥远的奖励”转换成更局部的残差信号；
+- $\lambda$ 相当于在 shaping 之后再控制我们愿意把多远的 residual 传播回来。
+
+## 8. 训练算法：GAE 与 TRPO 如何配合
+
+论文中的批量训练循环可以压缩成：
+
+```python title="gae_trpo_loop.py"
+initialize policy parameters theta
+initialize value parameters phi
+
+for iteration in range(num_iterations):
+    trajectories = collect_rollouts(policy=theta)
+
+    # Use the old value function for this batch.
+    deltas = rewards + gamma * next_values - values
+    advantages = discounted_reverse_sum(deltas, discount=gamma * lam)
+
+    theta = trpo_update(theta, trajectories, advantages)
+    phi = trust_region_value_update(phi, trajectories)
+```
+
+原论文给出的关键顺序是：
+
+1. 用当前 policy 采样一批 trajectory；
+2. 使用更新前的 $V_{\phi_i}$ 计算 TD residual 和 GAE；
+3. 用这些固定的 Advantage 做 TRPO policy update；
+4. 再更新 value function 得到 $V_{\phi_{i+1}}$。
+
+为什么不能先更新 value function，再用新 Critic 计算同一批数据的 Advantage？论文给了一个很好的极端例子：如果新的 value function 过拟合这批样本，使得所有 Bellman residual 都接近 0，那么 GAE 也会接近 0，策略梯度就会被人为抹掉。
+
+### 8.1 有限 rollout 的反向递推
+
+在实际代码里，不会真的求无限和，而是对有限 batch 从后向前扫描：
+
+```python title="gae.py"
+def generalized_advantage(rewards, values, terminated, gamma=0.99, lam=0.95):
+    advantages = torch.zeros_like(rewards)
+    running_advantage = torch.zeros((), device=rewards.device)
+
+    for timestep in reversed(range(len(rewards))):
+        continuation = 1.0 - terminated[timestep]
+        next_value = values[timestep + 1] if timestep + 1 < len(values) else 0.0
+        delta = rewards[timestep] + gamma * next_value * continuation - values[timestep]
+        running_advantage = delta + gamma * lam * continuation * running_advantage
+        advantages[timestep] = running_advantage
+
+    return advantages
+```
+
+这里最容易出错的是 `terminated`：
+
+- **真正终止**：环境已经进入 terminal state，后面没有可供 bootstrap 的价值；
+- **时间截断**：只是 rollout 达到最大长度，环境可能仍然可以继续，应按任务定义决定是否 bootstrap。
+
+把 termination 和 truncation 都简单当作 `done`，会系统性改变学习目标。
+
+## 9. TRPO 负责稳定，GAE 负责提供信号
+
+GAE 解决的是 Advantage 如何估计；TRPO 解决的是 policy 每一轮怎么安全地走。
+
+TRPO 近似求解：
+
+$$
+\begin{aligned}
+\text{minimize}_{\theta}\quad &L_{\theta_{\mathrm{old}}}(\theta)\\
+\text{subject to}\quad &
+D_{\mathrm{KL}}^{\mathrm{avg}}(\pi_{\theta_{\mathrm{old}}}\Vert\pi_\theta)\leq\epsilon.
+\end{aligned}
+$$
+
+直观地说，旧策略给出“往哪里走”的方向，KL trust region 限制“这一步不要走太远”。论文也对 value function 使用类似的 trust-region 约束，以避免它对最新 batch 过拟合。
+
+因此完整方法更准确的表述是：
+
+$$
+\boxed{
+\text{GAE：降低/控制策略梯度估计的方差}
+\qquad+
+\text{TRPO：限制策略更新的步长}
+}
+$$
+
+## 10. 论文实验：中间的 $\lambda$ 往往最好
+
+论文在四类任务上评估方法：
+
+- Cart-pole balancing；
+- 3D bipedal locomotion；
+- 3D quadrupedal locomotion；
+- 从躺倒状态动态站起的 3D biped。
+
+论文的机器人 policy 和 value function 使用三层全连接网络，隐藏层大小为 100、50、25，激活函数为 tanh。Humanoid 模型有 33 个状态维度和 10 个执行器；quadruped 模型有 29 个状态维度和 8 个执行器。
+
+### 10.1 Cart-pole：极端值都不是最优
+
+<Figure src='/images/gae-paper/figure-2.png' alt='论文 Figure 2：Cart-pole 中不同 lambda 与 gamma 的学习曲线和性能热图。' caption='图 1 · 原论文 Figure 2。左图显示在 gamma=0.99 时，中间的 lambda 区间学习更快；右图显示 gamma 与 lambda 的中间组合通常更好。图片截取自原论文 PDF。' width={1200} height={780} />
+
+在 Cart-pole 上，论文报告的较好范围是：
+
+$$
+\gamma\in[0.96,0.99],\qquad \lambda\in[0.92,0.99].
+$$
+
+这张图很直观地说明：
+
+- $\lambda=0$ 的估计太短，Critic 偏差会直接进入策略更新；
+- $\lambda=1$ 的估计虽然更接近 Monte Carlo，但方差会拖慢学习；
+- 中间值在当前任务、网络和 batch 设置下取得更快的 policy improvement。
+
+### 10.2 3D locomotion：价值函数确实带来收益
+
+<Figure src='/images/gae-paper/figure-1.png' alt='论文 Figure 1：3D 双足与四足机器人模型及学习到的步态序列。' caption='图 2 · 原论文 Figure 1。上方是 3D locomotion 的机器人模型，下方是学习到的步态片段。图片截取自原论文 PDF。' width={1200} height={630} />
+
+<Figure src='/images/gae-paper/figure-3.png' alt='论文 Figure 3：3D 双足和四足 locomotion 的学习曲线。' caption='图 3 · 原论文 Figure 3。左图为 3D biped，右图为 3D quadruped；在四足任务中，带 value function 且 lambda=0.96 的设置明显优于 no value function 与 lambda=1 的比较条件。图片截取自原论文 PDF。' width={1200} height={720} />
+
+论文给出的现象包括：
+
+- 3D biped locomotion 的较好设置集中在 $\gamma\in[0.99,0.995]$、$\lambda\in[0.96,0.99]$；
+- quadruped locomotion 中，$\gamma=0.995,\lambda=0.96$ 的 value function 设置优于 no value function 和 $\lambda=1$ 的比较条件；
+- biped getting-up 中，value function 总体有帮助，$\lambda=0.96$ 与 $\lambda=1$ 的结果接近；
+- biped 实验在 1000 次 policy iteration 后得到快速、平滑且基本稳定的步态；按论文的仿真速度折算，使用了约 5.8 天的“真实时间”经验。
+
+这些结果支持的不是“永远应该用 $\lambda=0.96$”这一规则，而是更谨慎的结论：**在价值函数足够有用、但又不完美的情况下，中间的 multi-step 信号往往比两个极端更合适。**
+
+## 11. 把两份笔记合并后的核心理解
+
+### Takeaway 1：GAE 不是一个孤立公式
+
+它来自一条非常自然的构造链：
+
+$$
+1\text{-step}
+\rightarrow
+2\text{-step}
+\rightarrow
+k\text{-step}
+\rightarrow
+\text{指数加权平均}
+\rightarrow
+\text{GAE}.
+$$
+
+### Takeaway 2：真正的矛盾是两种误差来源
+
+$$
+\boxed{
+\text{Value Function Approximation Error}
+\quad\text{vs.}\quad
+\text{Trajectory Sampling Noise}
+}
+$$
+
+短时估计更依赖 value prediction，长时估计更依赖真实 rollout。$\lambda$ 让这个矛盾显式化，而不是把它藏在某个固定的算法细节中。
+
+### Takeaway 3：GAE 只负责“动作好坏”，TRPO 负责“怎么更新”
+
+不要把 GAE、Actor–Critic、TRPO 混成一个概念：
+
+- GAE：构造 $\hat A_t$；
+- Actor–Critic：用 policy 网络和 value 网络分别扮演 Actor、Critic；
+- TRPO：利用 Advantage 更新 policy，并通过 KL trust region 限制更新幅度。
+
+### Takeaway 4：论文先用旧 Critic 算 Advantage 不是偶然
+
+这是为了让一批数据对应一个稳定、明确的估计器。若先把 Critic 对这批数据过拟合，再用它算 residual，可能会把策略学习信号压成接近 0。
+
+### Takeaway 5：默认值只是起点，不是仪式
+
+工程上常从 $\gamma=0.99,\lambda=0.95$ 开始，但更可靠的做法是固定随机种子、batch 大小和评估回合，比较一小组参数，并同时观察：
+
+1. 原始 Advantage 的均值、方差和尾部；
+2. value target 与 value prediction 的误差；
+3. episode length、terminated/truncated 比例；
+4. policy KL 与每轮更新幅度；
+5. 归一化前后的 Advantage 分布。
+
+Advantage normalization 可以让优化器更平稳，但它不能修复错误的终止 mask、严重的 Critic 偏差或错误的 reward scale。
+
+## 12. 阅读后的自测问题
+
+如果能够独立回答下面的问题，基本就掌握了这篇论文的主线：
+
+1. 为什么 Policy Gradient 更喜欢 Advantage，而不是直接使用 total return？
+2. $G_t$、$Q^\pi(s_t,a_t)$ 和一次采样得到的 return 有什么区别？
+3. 为什么同一个 $(s_t,a_t)$ 仍然可能对应不同的采样回报？
+4. 为什么 TD residual 在价值函数准确时可以成为 Advantage estimator？
+5. 为什么 $k$ 越大通常更少依赖 bootstrap，却可能有更高方差？
+6. GAE 为什么等价于所有 $k$-step estimator 的指数加权平均？
+7. $\gamma$ 与 $\lambda$ 的职责有什么不同？
+8. 为什么论文用旧 value function 计算 Advantage，再更新 value function？
+9. GAE 和 TRPO 分别解决哪个问题？
+10. 为什么真实终止和时间截断不能无条件地使用同一个 mask？
+
+## 总结
+
+这篇论文最值得记住的不是：
+
+$$
+\hat A_t^{\mathrm{GAE}}
+=
+\sum_l(\gamma\lambda)^l\delta_{t+l},
+$$
+
+而是它为什么会出现：
+
+$$
+\boxed{
+\text{策略梯度方差大}
+\rightarrow
+\text{需要 Advantage}
+\rightarrow
+\text{Advantage 不可直接获得}
+\rightarrow
+\text{比较 1-step 与 Monte Carlo}
+\rightarrow
+\text{构造 k-step}
+\rightarrow
+\text{对 k 做指数加权}
+\rightarrow
+\text{GAE}
+}
+$$
+
+如果只用一句话概括：
+
+> **GAE 是对多种时间范围 Advantage estimator 的指数加权平均，它用 $\lambda$ 在“相信 Critic”与“相信真实 rollout”之间做连续的 bias–variance trade-off；而论文再用 TRPO 把这个较可靠的学习信号转化为受约束的策略更新。**
+
+### References
+
+- Schulman, J., Moritz, P., Levine, S., Jordan, M. I., & Abbeel, P. *High-Dimensional Continuous Control Using Generalized Advantage Estimation*. ICLR 2016. [arXiv:1506.02438](https://arxiv.org/abs/1506.02438)
+- Schulman, J., Levine, S., Moritz, P., Jordan, M. I., & Abbeel, P. *Trust Region Policy Optimization*. arXiv:1502.05477, 2015.
+- Ng, A. Y., Harada, D., & Russell, S. *Policy Invariance under Reward Transformations: Theory and Application to Reward Shaping*. ICML, 1999.
+
+> 文中图 1–3 为原论文 PDF 中的 Figure 1–3 截图，用于论文阅读与讲解；图注和实验结论按原论文相应章节整理。
