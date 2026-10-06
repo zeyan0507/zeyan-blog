@@ -1,0 +1,436 @@
+---
+title: 'From Policy Gradient to PPO: Understanding Proximal Policy Optimization'
+description: 'A paper-grounded guide to TRPO, probability ratios, the clipped surrogate objective, GAE, actor–critic training, experiments, implementation details, and open-source PPO code.'
+publishDate: '2026-10-06'
+updatedDate: '2026-10-06'
+category: paper-reading
+collection: reinforcement-learning
+researchTopics:
+  - reinforcement-learning
+paper:
+  title: 'Proximal Policy Optimization Algorithms'
+  authors: ['John Schulman', 'Filip Wolski', 'Prafulla Dhariwal', 'Alec Radford', 'Oleg Klimov']
+  year: 2017
+  venue: arXiv
+  url: 'https://arxiv.org/abs/1707.06347'
+  arxivId: '1707.06347'
+featured: true
+tags:
+  - reinforcement learning
+  - policy gradient
+  - PPO
+  - GAE
+  - actor critic
+  - TRPO
+  - paper reading
+language: English
+translationKey: understanding-ppo
+---
+
+import Callout from '@/components/article/Callout.astro'
+import Figure from '@/components/article/Figure.astro'
+
+# From Policy Gradient to PPO: Understanding Proximal Policy Optimization
+
+> **Paper:** *Proximal Policy Optimization Algorithms*  
+> **Authors:** John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, Oleg Klimov  
+> **Paper history:** arXiv preprint in 2017  
+> **Paper link:** [arXiv:1707.06347](https://arxiv.org/abs/1707.06347)
+
+## The short version
+
+PPO does not invent policy gradients from scratch. It addresses a practical question:
+
+> **How can we optimize for several epochs on data collected by an old policy without letting the new policy move too far in one update?**
+
+The conceptual route is:
+
+$$
+\text{Policy Gradient}
+\rightarrow
+\text{TRPO}
+\rightarrow
+\text{PPO}.
+$$
+
+- Vanilla policy gradient is noisy, unstable, and uses each on-policy batch inefficiently;
+- TRPO protects updates with a KL trust region, but its second-order machinery is cumbersome;
+- PPO uses a probability ratio and a pessimistic clipped surrogate objective to obtain a practical first-order approximation to “do not move too far.”
+
+The most useful mental model is:
+
+> **PPO does not hard-clip every policy change. It removes the extra optimization incentive created by an update that has already become too favorable on a finite batch.**
+
+<Callout type='definition' title='One-sentence mental model'>
+Change the policy when the data supports it, but do not let one finite rollout push the policy too far. PPO clipping mainly limits the incentive for overly favorable updates; it does not erase evidence that the update moved in the wrong direction.
+</Callout>
+
+## 1. What problem does PPO target?
+
+The vanilla policy-gradient objective is commonly written as
+
+$$
+L^{PG}(\theta)=\hat{\mathbb E}_t\left[\log\pi_\theta(a_t\mid s_t)\hat A_t\right].
+$$
+
+If $\hat A_t>0$, we want to increase the probability of the action; if $\hat A_t<0$, we want to decrease it. The direction is straightforward. The difficult question is: **how much should the probability change?**
+
+When the same trajectory batch is reused, the current policy can move away from the old policy that generated the data. The old batch then becomes a weaker description of the new policy, while the unconstrained surrogate can encourage an excessively large update.
+
+PPO aims to be:
+
+- **Scalable:** compatible with neural networks and parallel rollouts;
+- **Data efficient:** able to perform multiple minibatch epochs on the current on-policy batch;
+- **Robust:** less likely to collapse because of one noisy batch.
+
+## 2. Advantage: the signal used by policy gradients
+
+The advantage function is
+
+$$
+A^{\pi}(s,a)=Q^{\pi}(s,a)-V^{\pi}(s).
+$$
+
+It asks how much better an action is than the policy's average behavior at the same state.
+
+- $A_t>0$: the action is better than the baseline, so increase its probability;
+- $A_t<0$: the action is worse than the baseline, so decrease its probability.
+
+In practice, a critic estimates $V(s_t)$ and TD, GAE, or Monte Carlo returns provide an estimate of $\hat A_t$. See the companion [GAE paper notes](/blog/understanding-gae) for the detailed estimator derivation.
+
+## 3. TRPO: why a trust region is useful
+
+TRPO maximizes a surrogate while requiring the average KL divergence between the old and new policies to remain below a threshold:
+
+$$
+\begin{aligned}
+\text{maximize}_{\theta}\quad &L_{\theta_{\mathrm{old}}}^{\mathrm{CPI}}(\theta)\\
+\text{subject to}\quad &\bar D_{\mathrm{KL}}
+(\pi_{\theta_{\mathrm{old}}}\Vert\pi_\theta)\leq\delta.
+\end{aligned}
+$$
+
+This protects the relationship between the data and the policy being optimized. The price is an implementation involving approximate second-order information, conjugate gradients, and line search. It is less convenient for arbitrary neural architectures.
+
+PPO does not claim to be exactly the same algorithm. It turns the practical idea of a conservative policy step into an objective that ordinary SGD or Adam can optimize.
+
+## 4. The probability ratio
+
+PPO defines the probability ratio on each sampled action:
+
+$$
+r_t(\theta)=
+\frac{\pi_\theta(a_t\mid s_t)}
+{\pi_{\theta_{\mathrm{old}}}(a_t\mid s_t)}.
+$$
+
+At collection time, $\theta=\theta_{\mathrm{old}}$, so $r_t=1$ initially.
+
+For $A_t>0$, increasing the action probability means $r_t>1$; for $A_t<0$, decreasing it means $r_t<1$. The conservative policy-iteration surrogate is
+
+$$
+L^{CPI}(\theta)=
+\hat{\mathbb E}_t[r_t(\theta)\hat A_t].
+$$
+
+If we maximize this without protection, the ratio can be pushed too far because the optimizer over-trusts the finite batch's advantage estimates.
+
+## 5. PPO-Clip: the central equation
+
+PPO-Clip uses
+
+$$
+L^{CLIP}(\theta)=
+\hat{\mathbb E}_t\left[
+\min\left(
+r_t(\theta)\hat A_t,
+\operatorname{clip}(r_t(\theta),1-\epsilon,1+\epsilon)\hat A_t
+\right)
+\right].
+$$
+
+The paper uses $\epsilon=0.2$ as a representative setting.
+
+The objective does three things:
+
+1. compute the unclipped surrogate term $r_t\hat A_t$;
+2. restrict the ratio inside $[1-\epsilon,1+\epsilon]$ for the comparison term;
+3. take the `min` to construct a pessimistic lower bound.
+
+<Figure src='/images/ppo-paper/figure-1-clipped-objective.png' alt='Paper Figure 1: the PPO clipped surrogate objective as a function of the probability ratio for positive and negative advantages.' caption='Figure 1 · Original paper Figure 1. For A>0, the extra gain beyond 1+epsilon is clipped; for A<0, the extra gain below 1-epsilon is clipped. Red dots mark the initial point r=1. Image extracted from the original paper PDF.' width={1160} height={450} />
+
+## 6. Read the clipping case by case
+
+### 6.1 $A_t>0$: a good action
+
+For a good action, the optimizer wants to increase its probability, so $r_t$ should grow.
+
+- $1\le r_t\le1+\epsilon$: increasing the probability still improves the objective;
+- $r_t>1+\epsilon$: the clipped term is fixed at $(1+\epsilon)A_t$, so further increases provide no extra reward;
+- $r_t<1$: the good action is being down-weighted, and clipping does not turn that bad direction into a good update.
+
+The effective upper boundary for positive advantages is therefore $1+\epsilon$.
+
+### 6.2 $A_t<0$: a bad action
+
+For a bad action, the optimizer wants to reduce its probability, so $r_t$ should shrink.
+
+- $1-\epsilon\le r_t\le1$: reducing the probability still improves the objective;
+- $r_t<1-\epsilon$: the improvement is clipped;
+- $r_t>1$: the bad action is becoming more likely, and clipping does not hide that error.
+
+The effective lower boundary for negative advantages is $1-\epsilon$.
+
+This is why PPO is not simply “clip the ratio and substitute it.” The `min` makes the objective a conservative lower bound: once an update is sufficiently favorable, it receives no additional encouragement; when the update moves in the wrong direction, the objective can still push it back.
+
+<Figure src='/images/ppo-paper/figure-2-surrogate-objectives.png' alt='Paper Figure 2: KL, CPI, clipped, and PPO surrogate objectives along an interpolation between old and updated policy parameters.' caption='Figure 2 · Original paper Figure 2. Along the policy-update direction, the PPO objective is deliberately conservative and reaches its maximum near a moderate KL divergence. Image extracted from the original paper PDF.' width={900} height={390} />
+
+## 7. PPO clipping is not a hard constraint
+
+A common but inaccurate summary is:
+
+> PPO forces every $r_t$ to remain inside $[0.8,1.2]$.
+
+The clipping acts on the surrogate objective's optimization incentive. It does not directly constrain network weights, every state-action probability ratio, or the final policy's KL divergence.
+
+Therefore:
+
+- some sample ratios can still lie outside the interval;
+- policy changes differ across states and actions;
+- PPO-Clip is not identical to TRPO's strict KL trust region;
+- training should still monitor approximate KL, clip fraction, and entropy.
+
+“Proximal” is an empirical property of the objective, not an exact hard constraint on the entire policy.
+
+## 8. Adaptive KL penalty: the other route in the paper
+
+The paper also studies a KL-penalty objective:
+
+$$
+L^{KLPEN}(\theta)=
+\hat{\mathbb E}_t\left[
+r_t(\theta)\hat A_t-
+\beta D_{\mathrm{KL}}
+(\pi_{\theta_{\mathrm{old}}}(\cdot\mid s_t),
+\pi_\theta(\cdot\mid s_t))
+\right].
+$$
+
+After each update, $\beta$ is adjusted according to the observed KL and a target $d_{\mathrm{targ}}$: if the KL is too small, reduce the penalty; if it is too large, increase it.
+
+The experiments found the clipped surrogate generally stronger than the KL-penalty variant. Still, the alternative is useful because it makes the central idea explicit: PPO is about controlling the effective distance between old and new policies.
+
+## 9. The full actor–critic objective
+
+Practical PPO usually trains the value function and adds an entropy bonus alongside the policy objective:
+
+$$
+L_t^{CLIP+VF+S}(\theta,\phi)=
+\hat{\mathbb E}_t\left[
+L_t^{CLIP}(\theta)
+-c_1L_t^{VF}(\phi)
++c_2S[\pi_\theta](s_t)
+\right].
+$$
+
+The roles are distinct:
+
+- **Policy loss:** changes action probabilities using the advantage;
+- **Value loss:** trains the critic to provide a better baseline and return estimate;
+- **Entropy bonus:** preserves stochasticity and delays premature collapse.
+
+Code usually minimizes a loss, so signs can look opposite to the paper's maximization objective:
+
+```python title="ppo_loss.py"
+ratio = torch.exp(new_log_prob - old_log_prob)
+unclipped = ratio * advantages
+clipped = torch.clamp(ratio, 1.0 - clip_eps, 1.0 + clip_eps) * advantages
+policy_objective = torch.minimum(unclipped, clipped).mean()
+
+value_loss = 0.5 * (returns - values).pow(2).mean()
+entropy_bonus = entropy.mean()
+loss = -policy_objective + value_coef * value_loss - entropy_coef * entropy_bonus
+```
+
+### Why save `old_log_prob`?
+
+The old policy's log probability must be stored during collection. During optimization, the current policy produces `new_log_prob`, and
+
+$$
+r_t=\exp(\log\pi_\theta-\log\pi_{\mathrm{old}})
+$$
+
+provides a numerically stable way to compute the ratio.
+
+## 10. The relationship between GAE and PPO
+
+PPO answers: **how should the policy update be made conservatively?**  
+GAE answers: **how good was the sampled action?**
+
+A common finite-rollout recursion is:
+
+```python title="gae_for_ppo.py"
+gae = 0.0
+for timestep in reversed(range(num_steps)):
+    next_value = last_value if timestep == num_steps - 1 else values[timestep + 1]
+    nonterminal = 1.0 - terminated[timestep]
+    delta = rewards[timestep] + gamma * next_value * nonterminal - values[timestep]
+    gae = delta + gamma * lam * nonterminal * gae
+    advantages[timestep] = gae
+
+returns = advantages + values
+```
+
+Termination and truncation should not be collapsed into one blind `done` flag. A genuine terminal state has no future value to bootstrap from; a time-limit or rollout boundary may still require bootstrapping.
+
+## 11. Algorithm 1: the complete training flow
+
+The paper's actor–critic algorithm can be compressed to:
+
+```text
+Initialize policy and value-function parameters
+
+Repeat:
+    Collect T timesteps with the current policy
+    Compute returns and advantage estimates
+    Run K epochs of minibatch SGD on the same batch
+        Compute new log probabilities and ratios
+        Compute the clipped policy objective
+        Compute value loss and entropy bonus
+        Update policy/value parameters
+```
+
+The combination to remember is:
+
+> **Multiple Epochs + Clipping**
+
+Without clipping, repeated optimization on one on-policy batch can cause an overly large policy change. Without repeated optimization, PPO loses much of its data-efficiency advantage.
+
+## 12. What the experiments show
+
+The experiments ask three related questions:
+
+1. Is the clipped objective better than unconstrained and KL-penalty alternatives?
+2. Can PPO compete with TRPO, CEM, and A2C in continuous control?
+3. Does the simple first-order implementation scale to humanoid and Atari tasks?
+
+### 12.1 Continuous-control surrogate comparison
+
+On seven MuJoCo environments, the paper reports an average normalized score of 0.82 for clipping with $\epsilon=0.2$, compared with -0.39 for no clipping or penalty and lower scores for several fixed or adaptive KL-penalty settings.
+
+This does not make $\epsilon=0.2$ universal. It shows that a moderate clipped objective can balance stability and learning speed well in the tested setting.
+
+### 12.2 Comparison on continuous control
+
+<Figure src='/images/ppo-paper/figure-3-mujoco-comparison.png' alt='Paper Figure 3: PPO compared with several algorithms on MuJoCo continuous-control environments.' caption='Figure 3 · Original paper Figure 3. PPO-Clip is compared with A2C, A2C+Trust Region, CEM, Vanilla PG, and TRPO on seven MuJoCo environments for one million timesteps. Image extracted from the original paper PDF.' width={1140} height={620} />
+
+The paper reports that PPO outperforms the comparison methods on almost all of these environments, combining useful stability with a simpler implementation.
+
+### 12.3 Roboschool humanoid tasks
+
+<Figure src='/images/ppo-paper/figure-4-roboschool-learning-curves.png' alt='Paper Figure 4: PPO learning curves on three Roboschool humanoid control tasks.' caption='Figure 4 · Original paper Figure 4. PPO learning curves for Humanoid, HumanoidFlagrun, and HumanoidFlagrunHarder. Image extracted from the original paper PDF.' width={860} height={320} />
+
+<Figure src='/images/ppo-paper/figure-5-roboschool-frames.png' alt='Paper Figure 5: frames from a policy learned on RoboschoolHumanoidFlagrun.' caption='Figure 5 · Original paper Figure 5. The robot runs toward a target in the first six frames; after the target changes, it turns and runs toward the new target. Image extracted from the original paper PDF.' width={1210} height={440} />
+
+The value of this experiment is not only that the robot runs. It shows that PPO scales to high-dimensional continuous actions, complex dynamics, and a changing target.
+
+### 12.4 Atari
+
+The paper also compares PPO with A2C and ACER on the Arcade Learning Environment. The reported “games won” depends on the metric: PPO wins 30 games when averaged over the entire training period, while ACER wins 28 and PPO 19 when the average over the last 100 episodes is used. This is a useful reminder that **sample efficiency and final performance are different metrics**.
+
+<Figure src='/images/ppo-paper/figure-6-atari-comparison.png' alt='Paper Figure 6: PPO, A2C, and ACER learning curves on 49 Atari games.' caption='Figure 6 · Original paper Figure 6. PPO, A2C, and ACER are compared on the 49 Atari games included in OpenAI Gym at the time of publication. Image extracted from the original paper PDF.' width={1010} height={1260} />
+
+## 13. Open-source code and reproduction resources
+
+The paper's PDF includes a footnote pointing to the Berkeley Deep RL Course PPO homework. Later public implementations are often easier to read and run today:
+
+- [Berkeley Deep RL Course PPO homework](https://github.com/berkeleydeepRLcourse/homework/tree/master/hw4): the teaching/experimental entry referenced in the paper-era ecosystem.
+- [OpenAI Spinning Up PPO](https://github.com/openai/spinningup/tree/master/spinup/algos/pytorch/ppo): a clear PyTorch implementation covering rollouts, GAE, ratios, clipping, value loss, and KL-based early stopping.
+- [OpenAI Baselines PPO2](https://github.com/openai/baselines/tree/master/baselines/ppo2): a classic vectorized TensorFlow implementation, useful for minibatches, multiple epochs, and parallel environments.
+- [Stable-Baselines3 PPO](https://github.com/DLR-RM/stable-baselines3/tree/master/stable_baselines3/ppo): a modern PyTorch engineering implementation with buffers, evaluation, logging, and structured hyperparameters.
+
+These repositories should not all be described as the authors' official reproduction code. A more precise classification is: the Berkeley link is close to the historical teaching implementation; Spinning Up and Baselines are classic public implementations; Stable-Baselines3 is a modern engineering implementation. Older code may require compatibility work across Python, Gym, MuJoCo, TensorFlow, and environment APIs.
+
+## 14. Common implementation mistakes
+
+### 14.1 Overwriting the old policy reference
+
+`old_log_prob` must come from the policy that collected the batch. Do not overwrite it every epoch; otherwise the ratio moves back toward 1 and the clipping reference disappears.
+
+### 14.2 Confusing objective clipping with parameter clipping
+
+PPO clipping applies to the surrogate objective's probability ratio. It is not a `clamp` operation on network weights and not a strict KL constraint over all states.
+
+### 14.3 Ignoring termination versus truncation
+
+An incorrect bootstrap contaminates GAE, returns, and value loss. The policy loss may still look reasonable while the learning target has changed.
+
+### 14.4 Looking only at policy loss
+
+At minimum, monitor approximate KL, clip fraction, entropy, value loss, explained variance, episode return, and episode length.
+
+### 14.5 Treating PPO as replay-based off-policy learning
+
+PPO reuses a rollout within one update cycle, but it remains primarily on-policy. Old batches should not be replayed indefinitely like DQN or SAC experience.
+
+## 15. Where PPO sits in the RL map
+
+```text
+DQN
+  │  Value-based learning
+  ▼
+Policy Gradient
+  │  Directly optimise the policy
+  ▼
+Actor-Critic + Advantage
+  │  Learn a lower-variance signal
+  ▼
+GAE
+  │  Balance short- and long-horizon evidence
+  ▼
+TRPO
+  │  Constrain policy movement with a trust region
+  ▼
+PPO
+  │  Use first-order optimisation with a conservative objective
+  ▼
+SAC and later off-policy actor-critic methods
+```
+
+PPO should not be memorized as an isolated `clip` function. It connects policy gradients, actor–critic learning, GAE, and trust regions, making it a key bridge to many later policy-optimization methods.
+
+## 16. Self-test questions
+
+1. Why can vanilla policy gradient not safely reuse one trajectory batch indefinitely?
+2. What does the TRPO trust region protect?
+3. Why does PPO use $r_t=\pi_\theta/\pi_{\mathrm{old}}$?
+4. Why does $A_t>0$ activate the $1+\epsilon$ boundary, while $A_t<0$ activates the $1-\epsilon$ boundary?
+5. Why use `min` instead of simply substituting a clipped ratio?
+6. Why is PPO-Clip not a hard KL constraint?
+7. What does GAE do in PPO, and what does PPO itself do?
+8. Why must multiple epochs and clipping be understood together?
+9. Why do implementations use `exp(new_log_prob - old_log_prob)`?
+10. Why should termination and truncation not be handled by one blind `done` flag?
+
+## Conclusion
+
+PPO is not fundamentally about inventing a clip function. It is about:
+
+> **improving on-policy data efficiency while keeping policy changes conservative.**
+
+TRPO controls policy movement with an explicit trust region. PPO rewrites the same practical concern as a clipped surrogate objective that ordinary SGD or Adam can optimize. The `min` makes the objective pessimistic about overly favorable updates, preventing a finite batch from continually rewarding movement away from the old policy.
+
+A complete PPO implementation combines the policy objective, value loss, entropy bonus, GAE, stored old log probabilities, multiple epochs, and correct termination masks in one training loop.
+
+> **PPO = use first-order optimization to make the policy better, but do not let one rollout move it too far.**
+
+### References
+
+- Schulman, J., Wolski, F., Dhariwal, P., Radford, A., & Klimov, O. *Proximal Policy Optimization Algorithms*. arXiv:1707.06347, 2017.
+- [Original paper on arXiv](https://arxiv.org/abs/1707.06347)
+- [Berkeley Deep RL Course PPO homework](https://github.com/berkeleydeepRLcourse/homework/tree/master/hw4)
+- [OpenAI Spinning Up PPO](https://github.com/openai/spinningup/tree/master/spinup/algos/pytorch/ppo)
+- [OpenAI Baselines PPO2](https://github.com/openai/baselines/tree/master/baselines/ppo2)
+- [Stable-Baselines3 PPO](https://github.com/DLR-RM/stable-baselines3/tree/master/stable_baselines3/ppo)
+
+> Figures 1–6 are extracted from the original paper PDF for paper-reading and explanation. Captions and experimental summaries are paraphrased from the corresponding paper sections.

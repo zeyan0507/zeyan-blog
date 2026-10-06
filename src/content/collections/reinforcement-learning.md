@@ -8,6 +8,7 @@ started: 2025-09-01
 updated: 2026-10-04
 posts:
   - understanding-gae
+  - understanding-ppo
   - from-dqn-to-ppo
 status: Active
 ---

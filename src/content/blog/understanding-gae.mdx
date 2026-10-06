@@ -1,0 +1,347 @@
+---
+title: 'From Policy Gradient to GAE: Understanding Generalized Advantage Estimation'
+description: 'A paper-grounded guide to the motivation, derivation, bias–variance trade-off, implementation details, TRPO connection, experiments, and open-source code around GAE.'
+publishDate: '2026-10-06'
+updatedDate: '2026-10-06'
+category: paper-reading
+collection: reinforcement-learning
+researchTopics:
+  - reinforcement-learning
+paper:
+  title: 'High-Dimensional Continuous Control Using Generalized Advantage Estimation'
+  authors: ['John Schulman', 'Philipp Moritz', 'Sergey Levine', 'Michael Jordan', 'Pieter Abbeel']
+  year: 2016
+  venue: ICLR
+  url: 'https://arxiv.org/abs/1506.02438'
+  arxivId: '1506.02438'
+featured: true
+tags:
+  - reinforcement learning
+  - policy gradient
+  - advantage estimation
+  - GAE
+  - TRPO
+  - paper reading
+language: English
+translationKey: understanding-gae
+---
+
+import Callout from '@/components/article/Callout.astro'
+import Figure from '@/components/article/Figure.astro'
+
+# From Policy Gradient to GAE: Understanding Generalized Advantage Estimation
+
+> **Paper:** *High-Dimensional Continuous Control Using Generalized Advantage Estimation*  
+> **Authors:** John Schulman, Philipp Moritz, Sergey Levine, Michael I. Jordan, Pieter Abbeel  
+> **Paper history:** arXiv preprint in 2015; published at ICLR 2016  
+> **Paper link:** [arXiv:1506.02438](https://arxiv.org/abs/1506.02438)
+
+## The short version
+
+Generalized Advantage Estimation (GAE) is not a policy optimizer. It is an estimator for the advantage function, designed to make policy-gradient updates less noisy while retaining control over bias.
+
+The key idea is simple:
+
+> **One-step TD trusts the critic too much; a full Monte Carlo return trusts a random rollout too much. GAE uses $\lambda$ to interpolate between them.**
+
+The paper combines this estimator with a trust-region policy update, particularly TRPO. Keeping those roles separate prevents a common conceptual mistake:
+
+- **GAE** constructs an estimate of $A(s_t,a_t)$.
+- **The value function** supplies the learned baseline and bootstrapping signal.
+- **TRPO** controls how far the policy moves after the batch has been collected.
+
+<Callout type='definition' title='One-sentence mental model'>
+GAE is an exponentially weighted average of multi-step advantage estimators. Its $\lambda$ parameter controls how far we propagate temporal-difference evidence into the past.
+</Callout>
+
+## 1. Why policy gradients need an advantage estimate
+
+For a stochastic policy $\pi_\theta(a\mid s)$, the policy-gradient theorem can be written as
+
+$$
+\nabla_\theta J(\theta)
+=
+\mathbb{E}\left[
+\nabla_\theta \log \pi_\theta(a_t\mid s_t)\,Q^{\pi}(s_t,a_t)
+\right].
+$$
+
+The action-value $Q^{\pi}(s_t,a_t)$ is a valid learning signal, but it can have high variance. We can subtract a state-dependent baseline without changing the expected policy gradient:
+
+$$
+\mathbb{E}_{a_t\sim\pi_\theta(\cdot\mid s_t)}
+\left[\nabla_\theta\log\pi_\theta(a_t\mid s_t)b(s_t)\right]=0.
+$$
+
+Choosing $b(s_t)=V^{\pi}(s_t)$ gives the advantage function:
+
+$$
+A^{\pi}(s_t,a_t)=Q^{\pi}(s_t,a_t)-V^{\pi}(s_t).
+$$
+
+It measures whether the selected action was better or worse than the policy's average action at that state. In practice, the true $Q$ and $V$ are unknown, so both must be estimated from sampled trajectories.
+
+## 2. The two endpoints: one-step TD and Monte Carlo
+
+### 2.1 One-step TD residual
+
+Given a learned value function $V_\phi$, define the one-step residual
+
+$$
+\delta_t^V=r_t+\gamma V_\phi(s_{t+1})-V_\phi(s_t).
+$$
+
+If $V_\phi$ were exact, the conditional expectation of this residual would equal the true advantage. In a real training run, the critic is imperfect, so this estimator is locally cheap but sensitive to value-function error.
+
+At the first endpoint, $\lambda=0$:
+
+$$
+\hat A_t^{\mathrm{GAE}(\gamma,0)}=\delta_t^V.
+$$
+
+This usually gives lower variance, but it relies heavily on the critic.
+
+### 2.2 Monte Carlo return
+
+At the other endpoint, use a full discounted return:
+
+$$
+\hat A_t^{\mathrm{MC}}=\sum_{l=0}^{T-t-1}\gamma^l r_{t+l}-V_\phi(s_t).
+$$
+
+This reduces dependence on bootstrapping from $V_\phi$, but the estimator inherits every random fluctuation in the future trajectory. In long-horizon continuous-control tasks, its variance can make policy updates unstable.
+
+The practical question is therefore not “TD or Monte Carlo?” but:
+
+> **How much future evidence should be trusted before the estimator becomes too noisy?**
+
+## 3. From $k$-step returns to GAE
+
+The $k$-step advantage estimator can be expressed as a sum of residuals:
+
+$$
+\hat A_t^{(k)}
+=
+\sum_{l=0}^{k-1}\gamma^l\delta_{t+l}^V.
+$$
+
+Different values of $k$ create a family of estimators. Small $k$ bootstraps quickly from the value function; large $k$ uses more trajectory evidence.
+
+GAE avoids choosing one single $k$ by taking an exponentially weighted combination:
+
+$$
+\hat A_t^{\mathrm{GAE}(\gamma,\lambda)}
+=
+\sum_{l=0}^{\infty}(\gamma\lambda)^l\delta_{t+l}^V.
+$$
+
+The parameter $\lambda$ determines how quickly the influence of later residuals decays.
+
+### 3.1 What $\lambda$ changes
+
+When $\lambda=0$, only the current residual is used. As $\lambda$ approaches $1$, longer sequences are included and the estimate approaches a Monte Carlo-style return, assuming the rollout is sufficiently long and the boundary is handled correctly.
+
+| Estimator | Dependence on $V_\phi$ | Variance | Typical role |
+| --- | --- | --- | --- |
+| One-step TD | High | Low | Fast local signal |
+| GAE, small $\lambda$ | Moderate to high | Low to moderate | Stable actor–critic updates |
+| GAE, large $\lambda$ | Lower | Higher | Longer credit assignment |
+| Monte Carlo | Lowest bootstrapping dependence | Highest | Episodic reference |
+
+This is the central bias–variance trade-off. A larger $\lambda$ is not automatically better; the useful setting depends on rollout length, reward scale, critic quality, and the size of each policy update.
+
+### 3.2 $\gamma$ and $\lambda$ are different controls
+
+- $\gamma$ changes how the task values future rewards.
+- $\lambda$ changes how far TD residual information is propagated when constructing the estimator.
+
+They appear together as $\gamma\lambda$ in the reverse recursion, but they answer different questions. Confusing them makes hyperparameter tuning unnecessarily opaque.
+
+## 4. The $\gamma$-just perspective
+
+The paper uses the notion of a $\gamma$-just estimator to clarify what “unbiased” means. The estimator is unbiased for the policy gradient of the $\gamma$-discounted objective, not necessarily for an undiscounted objective.
+
+This distinction matters because discounting is already part of the objective. Even a perfect estimator can be “biased” relative to a different objective if the objective itself uses a different discount factor.
+
+## 5. Reward shaping intuition
+
+GAE can also be understood through potential-based reward shaping. The TD residual contains the shaped signal
+
+$$
+r_t+\gamma V_\phi(s_{t+1})-V_\phi(s_t).
+$$
+
+The critic provides a potential function over states. Summing residuals telescopes much of the potential difference, while the $\gamma\lambda$ weighting decides how far that shaped evidence is carried backward.
+
+This interpretation explains why GAE is more than “just a smoother return”: it changes the temporal distribution of the learning signal without changing the basic policy-gradient structure.
+
+## 6. How GAE fits into TRPO
+
+The batch-level training loop can be summarized as follows:
+
+```python title="gae_trpo_loop.py"
+initialize policy parameters theta
+initialize value parameters phi
+
+for iteration in range(num_iterations):
+    trajectories = collect_rollouts(policy=theta)
+
+    # Use the old value function for this batch.
+    deltas = rewards + gamma * next_values - values
+    advantages = discounted_reverse_sum(deltas, discount=gamma * lam)
+
+    theta = trpo_update(theta, trajectories, advantages)
+    phi = trust_region_value_update(phi, trajectories)
+```
+
+The order is important:
+
+1. Collect trajectories with the current policy.
+2. Compute residuals and GAE using the pre-update value function $V_{\phi_i}$.
+3. Use the fixed advantages for the TRPO policy update.
+4. Update the value function to obtain $V_{\phi_{i+1}}$.
+
+If the critic were updated first and overfit the same batch, its Bellman residuals could become artificially small. GAE would then shrink and erase useful policy-gradient information.
+
+TRPO approximately solves a constrained policy-update problem:
+
+$$
+\begin{aligned}
+\text{minimize}_{\theta}\quad &L_{\theta_{\mathrm{old}}}(\theta)\\
+\text{subject to}\quad &D_{\mathrm{KL}}^{\mathrm{avg}}
+(\pi_{\theta_{\mathrm{old}}}\Vert\pi_\theta)\leq\epsilon.
+\end{aligned}
+$$
+
+The division of labor is therefore:
+
+- **GAE:** reduce or control the variance of the policy-gradient signal.
+- **TRPO:** keep the policy update within a trust region.
+
+## 7. Implementation: the reverse recursion
+
+The infinite sum is never computed literally. For a finite rollout, scan backward:
+
+```python title="gae.py"
+def compute_gae(rewards, values, dones, last_value, gamma=0.99, lam=0.95):
+    advantages = torch.zeros_like(rewards)
+    gae = torch.zeros_like(last_value)
+
+    for t in reversed(range(len(rewards))):
+        next_value = last_value if t == len(rewards) - 1 else values[t + 1]
+        nonterminal = 1.0 - dones[t]
+        delta = rewards[t] + gamma * next_value * nonterminal - values[t]
+        gae = delta + gamma * lam * nonterminal * gae
+        advantages[t] = gae
+
+    returns = advantages + values
+    return advantages, returns
+```
+
+The mask is one of the most important details:
+
+- **Termination:** the environment has reached a genuine terminal state; there is no future value to bootstrap from.
+- **Truncation:** the rollout ended because of a time limit or batch boundary; depending on the task, bootstrapping may still be correct.
+
+Treating both cases as the same `done` flag can systematically change the target.
+
+After computing advantages, many implementations normalize them within the batch:
+
+$$
+\tilde A_t=\frac{\hat A_t-\operatorname{mean}(\hat A)}
+{\operatorname{std}(\hat A)+\varepsilon}.
+$$
+
+Normalization can make optimization calmer, but it does not repair a wrong termination mask, a poor critic, or a mis-scaled reward.
+
+## 8. Open-source code and reproduction resources
+
+The paper was written in an ecosystem that has since changed substantially. It is useful to distinguish the historical experiment framework from later, easier-to-read implementations:
+
+- [rllab](https://github.com/rll/rllab): a historical continuous-control and TRPO framework associated with the research ecosystem of the period. It is useful for reading older implementations, but it is no longer actively maintained.
+- [OpenAI Baselines `ppo1/pposgd_simple.py`](https://github.com/openai/baselines/blob/master/baselines/ppo1/pposgd_simple.py): the `add_vtarg_and_adv` function shows reverse GAE accumulation, TD($\lambda$) value targets, and advantage normalization.
+- [OpenAI Baselines `ppo2/runner.py`](https://github.com/openai/baselines/blob/master/baselines/ppo2/runner.py): a clear example of using `nextnonterminal` to distinguish true termination from a rollout boundary and to compute `mb_advs`.
+- [OpenAI Spinning Up TRPO documentation](https://spinningup.openai.com/en/latest/algorithms/trpo.html): a useful overview of how TRPO and advantage estimation fit together.
+- [Reproducibility_GAE](https://github.com/lweitkamp/Reproducibility_GAE): a teaching and reproduction repository for comparing Monte Carlo, TD, and GAE implementations.
+
+These links should not all be described as the paper authors' official reproduction code. A more precise classification is: `rllab` is close to the historical experiment framework; Baselines and Spinning Up are later public implementations; and `Reproducibility_GAE` is primarily educational. Running old rllab code may require resolving Python, Theano, MuJoCo, and Gym compatibility issues.
+
+## 9. Experimental evidence
+
+The paper's experiments support the intuition that intermediate settings often work better than either extreme. The point is not that one universal $\lambda$ exists, but that GAE exposes a useful knob for trading critic dependence against rollout variance.
+
+### 9.1 Cart-pole
+
+<Figure src='/images/gae-paper/figure-2.png' alt='Paper Figure 2: learning curves and performance heatmap for different lambda and gamma values on cart-pole.' caption='Figure 1 · Original paper Figure 2. The middle range of lambda values often learns faster than either extreme; the heatmap shows the interaction between gamma and lambda. Image extracted from the paper PDF.' width={1200} height={780} />
+
+### 9.2 Three-dimensional locomotion
+
+<Figure src='/images/gae-paper/figure-1.png' alt='Paper Figure 1: three-dimensional biped and quadruped models with learned gait sequences.' caption='Figure 2 · Original paper Figure 1. The top row shows the 3D locomotion models and the lower row shows learned gait sequences. Image extracted from the paper PDF.' width={1200} height={630} />
+
+<Figure src='/images/gae-paper/figure-3.png' alt='Paper Figure 3: learning curves for 3D biped and quadruped locomotion.' caption='Figure 3 · Original paper Figure 3. The plots compare 3D biped and quadruped locomotion; the value-function setting with an intermediate lambda performs better in the quadruped comparison. Image extracted from the paper PDF.' width={1200} height={720} />
+
+The experiments are best read as evidence for a design principle rather than a universal hyperparameter prescription: evaluate a small sweep under fixed seeds, fixed evaluation episodes, and logged estimator statistics.
+
+## 10. Practical diagnostics
+
+Before changing $\lambda$, log the distribution of:
+
+1. value targets;
+2. raw advantages;
+3. normalized advantages;
+4. value-prediction error; and
+5. episode lengths, termination rates, and truncation rates.
+
+If raw advantages are dominated by a few outliers, normalization may calm the optimizer without fixing the underlying credit-assignment problem. If value error grows while the policy loss looks healthy, the critic may be providing a misleading baseline.
+
+## 11. Main takeaways
+
+### Takeaway 1: GAE is not an isolated formula
+
+The paper's contribution is a coherent combination of advantage estimation, value-function learning, and constrained policy optimization. GAE is the estimator inside that larger training design.
+
+### Takeaway 2: The real tension is between two error sources
+
+Small $\lambda$ means greater dependence on a possibly biased critic. Large $\lambda$ means greater exposure to rollout randomness. GAE makes that tension explicit and tunable.
+
+### Takeaway 3: GAE and TRPO solve different problems
+
+GAE answers “how good was this action?” TRPO answers “how far should the policy move?” Combining them does not make them interchangeable.
+
+### Takeaway 4: The old critic is used deliberately
+
+Advantages should be computed from the value function associated with the data-collection policy. Updating the critic first can make the estimator depend on a model that has already adapted to the same batch.
+
+### Takeaway 5: Defaults are starting points, not rituals
+
+Values such as $\gamma=0.99$ and $\lambda=0.95$ are common starting points. They should be checked against rollout length, reward scale, critic quality, and the actual estimator statistics.
+
+## 12. Self-test questions
+
+1. Why can subtracting $V(s_t)$ reduce policy-gradient variance without changing its expectation?
+2. What does the one-step residual estimate when the value function is exact?
+3. Why does $\lambda=0$ depend more heavily on the critic than $\lambda\approx1$?
+4. Why is a truncated rollout not necessarily the same as a terminal transition?
+5. Why should the critic be frozen while computing advantages for a policy update?
+6. Why is GAE an exponentially weighted average of all $k$-step estimators?
+7. What does $\gamma$ change, and what does $\lambda$ change?
+8. Which part of the pipeline is responsible for estimating the signal, and which part controls the policy step size?
+
+## Conclusion
+
+GAE is best remembered as a controlled interpolation between two imperfect sources of evidence. One-step TD is efficient but trusts the critic; Monte Carlo is direct but noisy. By exponentially weighting future TD residuals, GAE makes the bias–variance trade-off explicit through $\lambda$.
+
+The paper then combines this estimator with TRPO, turning a more reliable advantage signal into a conservative policy update. In implementation, the most consequential details are often not the headline equation but the reverse scan, the bootstrap value, the termination/truncation mask, the order of critic and policy updates, and the diagnostic plots around them.
+
+> **GAE is an exponentially weighted average of multi-horizon advantage estimators. It uses $\lambda$ to balance trust in the critic against trust in the sampled rollout, while TRPO controls how that signal changes the policy.**
+
+### References
+
+- Schulman, J., Moritz, P., Levine, S., Jordan, M. I., & Abbeel, P. *High-Dimensional Continuous Control Using Generalized Advantage Estimation*. arXiv:1506.02438; ICLR 2016.
+- [Original paper on arXiv](https://arxiv.org/abs/1506.02438)
+- [rllab](https://github.com/rll/rllab)
+- [OpenAI Baselines](https://github.com/openai/baselines)
+- [OpenAI Spinning Up TRPO](https://spinningup.openai.com/en/latest/algorithms/trpo.html)
+- [Reproducibility_GAE](https://github.com/lweitkamp/Reproducibility_GAE)
+
+> Figures 1–3 are extracted from the original paper PDF for paper-reading and explanation. Captions and experimental interpretations are paraphrased from the corresponding sections of the paper.

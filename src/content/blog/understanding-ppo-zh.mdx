@@ -1,0 +1,436 @@
+---
+title: '从 Policy Gradient 到 PPO：读懂 Proximal Policy Optimization'
+description: '结合 PPO 原论文、可发布阅读笔记与 Obsidian 思考，系统梳理 TRPO、概率比值、Clipped Surrogate Objective、GAE、Actor-Critic、实验结果与开源实现。'
+publishDate: '2026-10-06'
+updatedDate: '2026-10-06'
+category: paper-reading
+collection: reinforcement-learning
+researchTopics:
+  - reinforcement-learning
+paper:
+  title: 'Proximal Policy Optimization Algorithms'
+  authors: ['John Schulman', 'Filip Wolski', 'Prafulla Dhariwal', 'Alec Radford', 'Oleg Klimov']
+  year: 2017
+  venue: arXiv
+  url: 'https://arxiv.org/abs/1707.06347'
+  arxivId: '1707.06347'
+featured: true
+tags:
+  - reinforcement learning
+  - policy gradient
+  - PPO
+  - GAE
+  - actor critic
+  - TRPO
+  - paper reading
+language: zh
+translationKey: understanding-ppo
+---
+
+import Callout from '@/components/article/Callout.astro'
+import Figure from '@/components/article/Figure.astro'
+
+# 从 Policy Gradient 到 PPO：读懂 Proximal Policy Optimization
+
+> **Paper**: *Proximal Policy Optimization Algorithms*  
+> **Authors**: John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, Oleg Klimov  
+> **Paper history**: arXiv preprint in 2017  
+> **Paper link**: [arXiv:1707.06347](https://arxiv.org/abs/1707.06347)
+
+## 先给结论
+
+PPO 不是从零发明一个新的 Policy Gradient，而是回答了一个更实际的问题：
+
+> **如何在一批由旧策略采集的数据上进行多轮优化，同时避免新策略一次更新得太远？**
+
+它沿着一条很清晰的路线展开：
+
+$$
+\text{Policy Gradient}
+\rightarrow
+\text{TRPO}
+\rightarrow
+\text{PPO}.
+$$
+
+- Vanilla Policy Gradient 会因为更新噪声大、数据利用率低而不稳定；
+- TRPO 用 KL trust region 约束策略变化，但二阶近似和共轭梯度实现较复杂；
+- PPO 用概率比值和一个 pessimistic clipped surrogate objective，使用普通的一阶优化器近似实现“不要走太远”。
+
+最重要的心智模型是：
+
+> **PPO 不是把所有策略变化硬裁剪到某个范围，而是只截断“继续朝有利方向走所带来的额外收益”。**
+
+<Callout type='definition' title='一句话记忆 PPO'>
+该变的时候变，但不要因为一批有限的 rollout 就一次走得太远。PPO 的 clipping 主要限制过度有利更新的优化激励，而不是把错误方向的更新直接抹掉。
+</Callout>
+
+## 1. PPO 究竟想解决什么
+
+Vanilla Policy Gradient 的基本目标是
+
+$$
+L^{PG}(\theta)=\hat{\mathbb E}_t\left[\log\pi_\theta(a_t\mid s_t)\hat A_t\right].
+$$
+
+如果 $\hat A_t>0$，我们希望提高该动作的概率；如果 $\hat A_t<0$，我们希望降低它。这种方向没有问题，困难在于：**到底应该改变多少？**
+
+同一批 trajectory 被重复使用时，当前策略可能已经离开采样数据对应的旧策略。此时，旧数据对新策略的支持变弱，普通的 surrogate objective 可能鼓励一个过大的 policy update。
+
+PPO 的设计目标可以概括成三个词：
+
+- **Scalable**：适合神经网络和并行 rollout；
+- **Data efficient**：同一批 on-policy 数据可以进行多个 epoch 的 minibatch 更新；
+- **Robust**：策略更新不应因为一次 noisy batch 而崩溃。
+
+## 2. Advantage：策略梯度真正使用的信号
+
+Advantage 定义为
+
+$$
+A^{\pi}(s,a)=Q^{\pi}(s,a)-V^{\pi}(s).
+$$
+
+它表达的是：在状态 $s$ 下采取动作 $a$，比当前策略在这个状态下的平均表现好多少。
+
+- $A_t>0$：动作比基准更好，应提高其概率；
+- $A_t<0$：动作比基准更差，应降低其概率。
+
+实践中通常由 Critic 估计 $V(s_t)$，再使用 TD、GAE 或 Monte Carlo 构造 $\hat A_t$。GAE 的详细推导见博客中的 [GAE 论文笔记](/zh/blog/understanding-gae-zh)。
+
+## 3. TRPO：为什么需要 trust region
+
+TRPO 的基本思想是：优化 surrogate objective 的同时，要求新旧策略之间的平均 KL 散度不能超过阈值：
+
+$$
+\begin{aligned}
+\text{maximize}_{\theta}\quad &L_{\theta_{\mathrm{old}}}^{\mathrm{CPI}}(\theta)\\
+\text{subject to}\quad &\bar D_{\mathrm{KL}}
+(\pi_{\theta_{\mathrm{old}}}\Vert\pi_\theta)\leq\delta.
+\end{aligned}
+$$
+
+这使得旧策略采集的数据在更新后仍然具有一定参考价值。但 TRPO 需要近似二阶信息、共轭梯度和 line search，工程实现明显比普通 SGD/Adam 复杂，也不太适合所有网络结构。
+
+PPO 的目标不是重新证明一个完全相同的 trust-region 算法，而是设计一个更容易实现、同时经验上足够保守的替代方案。
+
+## 4. Probability ratio：PPO 的核心变量
+
+PPO 定义新旧策略在已采样动作上的概率比值：
+
+$$
+r_t(\theta)=
+\frac{\pi_\theta(a_t\mid s_t)}
+{\pi_{\theta_{\mathrm{old}}}(a_t\mid s_t)}.
+$$
+
+采样时 $\theta=\theta_{\mathrm{old}}$，因此初始时 $r_t=1$。
+
+若 $A_t>0$，提高动作概率意味着 $r_t>1$；若 $A_t<0$，降低动作概率意味着 $r_t<1$。于是，原始的 conservative policy iteration surrogate objective 为
+
+$$
+L^{CPI}(\theta)=
+\hat{\mathbb E}_t[r_t(\theta)\hat A_t].
+$$
+
+问题是：如果只最大化这个式子，$r_t$ 可能被推得过大，模型会过度相信有限 batch 中的优势估计。
+
+## 5. PPO-Clip：论文的核心公式
+
+PPO-Clip 使用如下目标：
+
+$$
+L^{CLIP}(\theta)=
+\hat{\mathbb E}_t\left[
+\min\left(
+r_t(\theta)\hat A_t,
+\operatorname{clip}(r_t(\theta),1-\epsilon,1+\epsilon)\hat A_t
+\right)
+\right].
+$$
+
+论文中常用 $\epsilon=0.2$ 作为示例超参数。
+
+这里包含三个关键动作：
+
+1. 计算未裁剪的 surrogate term $r_t\hat A_t$；
+2. 将 ratio 限制在 $[1-\epsilon,1+\epsilon]$ 内；
+3. 对未裁剪和裁剪后的结果取 `min`，构造一个 pessimistic objective。
+
+<Figure src='/images/ppo-paper/figure-1-clipped-objective.png' alt='论文 Figure 1：正负 Advantage 下 PPO clipped surrogate objective 关于 probability ratio 的形状。' caption='图 1 · 原论文 Figure 1。A>0 时，超过 1+epsilon 的额外收益被截断；A<0 时，低于 1-epsilon 的额外收益被截断。红点表示从 r=1 开始优化。图片截取自原论文 PDF。' width={1160} height={450} />
+
+## 6. 逐种情况理解 clipping
+
+### 6.1 $A_t>0$：好动作
+
+当动作是好的，优化器希望提高它的概率：$r_t$ 应该变大。
+
+- $1\le r_t\le1+\epsilon$：继续提高概率仍然会增加目标；
+- $r_t>1+\epsilon$：裁剪项固定在 $(1+\epsilon)A_t$，继续提高概率不再获得额外收益；
+- $r_t<1$：这是把好动作降权，PPO 不会把这个坏方向“奖励”为更优更新。
+
+因此，$A_t>0$ 时有效上边界主要是 $1+\epsilon$。
+
+### 6.2 $A_t<0$：坏动作
+
+当动作是坏的，优化器希望降低它的概率：$r_t$ 应该变小。
+
+- $1-\epsilon\le r_t\le1$：继续降低概率仍然会改善目标；
+- $r_t<1-\epsilon$：改善收益被截断；
+- $r_t>1$：这是提高坏动作的概率，PPO 不会用 clipping 把它掩盖掉。
+
+因此，$A_t<0$ 时有效下边界主要是 $1-\epsilon$。
+
+这解释了为什么 PPO 不是“把 ratio 直接裁剪后再代入目标”这么简单。`min` 使目标成为原始 surrogate 的保守下界：当更新已经足够有利时，不再鼓励它继续变大；当更新朝着错误方向变化时，损失仍然可以继续提醒优化器纠正它。
+
+<Figure src='/images/ppo-paper/figure-2-surrogate-objectives.png' alt='论文 Figure 2：沿策略更新方向比较 KL、CPI、clipped objective 和 PPO objective。' caption='图 2 · 原论文 Figure 2。PPO-Clip 的目标在策略更新方向上形成较保守的曲线，在合适的 KL 附近达到最大值。图片截取自原论文 PDF。' width={900} height={390} />
+
+## 7. PPO clipping 不是 hard constraint
+
+常见误解是：
+
+> PPO 就是强制 $r_t\in[0.8,1.2]$。
+
+这不准确。PPO-Clip 约束的是**目标函数中的优化激励**，而不是直接约束神经网络参数、所有状态上的概率比值，或者最终策略的 KL 散度。
+
+因此：
+
+- 某些样本的 ratio 仍可能超出区间；
+- 不同状态、不同动作的策略变化并不相同；
+- PPO-Clip 不等价于 TRPO 的严格 KL trust region；
+- 训练时仍应监控 approximate KL、clip fraction 和 entropy。
+
+PPO 的“近端”是目标函数设计带来的经验性保守，而不是一个精确的硬约束。
+
+## 8. Adaptive KL Penalty：论文讨论的另一条路线
+
+论文还讨论了 KL penalty 版本：
+
+$$
+L^{KLPEN}(\theta)=
+\hat{\mathbb E}_t\left[
+r_t(\theta)\hat A_t-
+\beta D_{\mathrm{KL}}
+(\pi_{\theta_{\mathrm{old}}}(\cdot\mid s_t),
+\pi_\theta(\cdot\mid s_t))
+\right].
+$$
+
+每轮更新后，根据实际 KL 与目标 $d_{\mathrm{targ}}$ 的关系调整 $\beta$：KL 太小就减小惩罚系数，KL 太大就增大惩罚系数。
+
+论文实验发现，clipped surrogate 通常优于 KL penalty，因此今天大家说 PPO 时，通常主要指 PPO-Clip。但 Adaptive KL Penalty 仍然有助于理解：PPO 解决的核心是控制新旧 policy 的有效距离。
+
+## 9. PPO 的完整 Actor-Critic 目标
+
+实际 PPO 通常不只优化 policy objective，还会同时训练 value function，并加入 entropy bonus：
+
+$$
+L_t^{CLIP+VF+S}(\theta,\phi)=
+\hat{\mathbb E}_t\left[
+L_t^{CLIP}(\theta)
+-c_1L_t^{VF}(\phi)
++c_2S[\pi_\theta](s_t)
+\right].
+$$
+
+三部分分工不同：
+
+- **Policy loss**：利用 Advantage 改变动作概率；
+- **Value loss**：训练 Critic，使状态价值估计更可靠；
+- **Entropy bonus**：鼓励策略保留随机性，避免过早塌缩。
+
+代码里通常最小化 loss，所以符号可能与论文最大化 objective 的写法相反：
+
+```python title="ppo_loss.py"
+ratio = torch.exp(new_log_prob - old_log_prob)
+unclipped = ratio * advantages
+clipped = torch.clamp(ratio, 1.0 - clip_eps, 1.0 + clip_eps) * advantages
+policy_objective = torch.minimum(unclipped, clipped).mean()
+
+value_loss = 0.5 * (returns - values).pow(2).mean()
+entropy_bonus = entropy.mean()
+loss = -policy_objective + value_coef * value_loss - entropy_coef * entropy_bonus
+```
+
+### 为什么保存 `old_log_prob`
+
+采样时需要保存旧策略对动作的 log probability。更新过程中用当前 policy 重新计算 `new_log_prob`，再通过
+
+$$
+r_t=\exp(\log\pi_\theta-\log\pi_{\mathrm{old}})
+$$
+
+得到 ratio。这样比直接计算两个极小概率的比值更加稳定。
+
+## 10. GAE 与 PPO 的关系
+
+PPO 负责回答：**policy 应该如何保守地更新？**  
+GAE 负责回答：**这次采样中的动作到底有多好？**
+
+使用 GAE 时，常见的有限 rollout 反向递推为：
+
+```python title="gae_for_ppo.py"
+gae = 0.0
+for timestep in reversed(range(num_steps)):
+    next_value = last_value if timestep == num_steps - 1 else values[timestep + 1]
+    nonterminal = 1.0 - terminated[timestep]
+    delta = rewards[timestep] + gamma * next_value * nonterminal - values[timestep]
+    gae = delta + gamma * lam * nonterminal * gae
+    advantages[timestep] = gae
+
+returns = advantages + values
+```
+
+termination 和 truncation 不能简单混为一个 `done`：真正 terminal 状态不能 bootstrap，而时间截断或 rollout 边界在很多任务中仍然需要使用下一个状态的价值。
+
+## 11. PPO Algorithm 1：完整训练流程
+
+论文的 Actor-Critic 风格算法可以压缩成：
+
+```text
+初始化 policy 和 value function
+
+重复训练：
+    用当前 policy 采样 T 个时间步
+    计算 returns 和 advantage estimates
+    用同一批数据执行 K 个 epoch 的 minibatch SGD
+        计算 new_log_prob 和 probability ratio
+        计算 clipped policy objective
+        计算 value loss 和 entropy bonus
+        更新 policy/value 参数
+```
+
+这里有一个必须同时理解的组合：
+
+> **Multiple Epochs + Clipping**
+
+如果没有 clipping，重复使用同一批 on-policy 数据容易产生过大的策略变化；如果只 clipping 但完全不重复优化，PPO 的数据效率优势又无法体现。
+
+## 12. 论文实验：PPO 为什么有说服力
+
+论文实验围绕三个问题展开：
+
+1. Clipped objective 是否优于不限制或 KL penalty 的 surrogate？
+2. 在连续控制中，PPO 是否能与 TRPO、CEM、A2C 等方法竞争？
+3. 在高维 humanoid 与 Atari 中，简单的一阶实现是否仍然有效？
+
+### 12.1 连续控制中的 surrogate 对比
+
+在 7 个 MuJoCo 环境的连续控制 benchmark 中，论文报告的平均 normalized score 里，clipping 且 $\epsilon=0.2$ 的设置达到 0.82，高于不 clipping、不 penalty 的 -0.39，也高于若干固定或自适应 KL penalty 设置。
+
+这不是说 $\epsilon=0.2$ 在所有任务上都最优，而是说明一个适度的 clipped objective 能够在稳定性和学习速度之间取得较好的经验平衡。
+
+### 12.2 与其他算法的连续控制比较
+
+<Figure src='/images/ppo-paper/figure-3-mujoco-comparison.png' alt='论文 Figure 3：PPO 与多种算法在 MuJoCo 连续控制环境中的学习曲线比较。' caption='图 3 · 原论文 Figure 3。PPO-Clip 与 A2C、A2C+Trust Region、CEM、Vanilla PG、TRPO 在 7 个 MuJoCo 环境上训练 1M timesteps 的比较。图片截取自原论文 PDF。' width={1140} height={620} />
+
+论文观察到 PPO 在几乎所有连续控制环境中都优于比较方法，尤其在高维任务中体现出较好的稳定性和实现效率。
+
+### 12.3 Roboschool humanoid
+
+<Figure src='/images/ppo-paper/figure-4-roboschool-learning-curves.png' alt='论文 Figure 4：PPO 在 Roboschool 三个 humanoid 控制任务上的学习曲线。' caption='图 4 · 原论文 Figure 4。PPO 在 Humanoid、HumanoidFlagrun 和 HumanoidFlagrunHarder 上的学习曲线。图片截取自原论文 PDF。' width={860} height={320} />
+
+<Figure src='/images/ppo-paper/figure-5-roboschool-frames.png' alt='论文 Figure 5：RoboschoolHumanoidFlagrun 中学习到的 humanoid 策略帧序列。' caption='图 5 · 原论文 Figure 5。前六帧中机器人朝目标奔跑，目标位置改变后，机器人转向并奔向新目标。图片截取自原论文 PDF。' width={1210} height={440} />
+
+这个实验的意义不只是“机器人跑起来了”，还在于它展示了 PPO 在高维连续动作、复杂动力学和目标变化条件下的可扩展性。
+
+### 12.4 Atari
+
+论文还在 Atari Learning Environment 上将 PPO 与 A2C、ACER 比较。论文报告的“赢得的游戏数”取决于评价指标：按整个训练过程的平均回报，PPO 赢得 30 个游戏；按最后 100 个 episode 的平均回报，ACER 赢得 28 个而 PPO 赢得 19 个。这提示我们：**样本效率与最终性能不是同一个指标。**
+
+<Figure src='/images/ppo-paper/figure-6-atari-comparison.png' alt='论文 Figure 6：PPO、A2C、ACER 在 49 个 Atari 游戏上的学习曲线。' caption='图 6 · 原论文 Figure 6。PPO、A2C 和 ACER 在论文发表时 OpenAI Gym 收录的 49 个 Atari 游戏上的比较。图片截取自原论文 PDF。' width={1010} height={1260} />
+
+## 13. 开源代码与复现入口
+
+论文 PDF 的脚注给出了 Berkeley Deep RL Course 的 PPO homework 实现；此外，后续社区实现更适合今天阅读和复现：
+
+- [论文脚注中的 Berkeley Deep RL Course PPO homework](https://github.com/berkeleydeepRLcourse/homework/tree/master/hw4)：论文时期的教学/实验入口，适合对照论文算法结构。
+- [OpenAI Spinning Up PPO](https://github.com/openai/spinningup/tree/master/spinup/algos/pytorch/ppo)：PyTorch 版本的清晰实现，包含 rollout、GAE、ratio、clipping、value loss 和 early stopping by KL 等关键组件。
+- [OpenAI Baselines PPO2](https://github.com/openai/baselines/tree/master/baselines/ppo2)：经典 TensorFlow 时代的向量化 PPO 实现，适合阅读 minibatch、多 epoch 和环境并行部分。
+- [Stable-Baselines3 PPO](https://github.com/DLR-RM/stable-baselines3/tree/master/stable_baselines3/ppo)：现代 PyTorch 工程实现，适合查看生产级的 buffer、评估、日志和超参数组织方式。
+
+这些仓库不应全部被称为论文作者发布的“官方复现”。更准确的分类是：论文脚注仓库接近论文时代的教学实现，Spinning Up 和 Baselines 是经典公开实现，Stable-Baselines3 是现代工程化实现。运行旧代码时需要特别注意 Python、Gym、MuJoCo、TensorFlow 和环境 API 的版本兼容。
+
+## 14. 实现时最容易错的地方
+
+### 14.1 用错 old policy
+
+`old_log_prob` 必须来自采样时的旧策略。不能每个 epoch 都覆盖它，否则 ratio 会重新接近 1，clipping 的参照系就失效了。
+
+### 14.2 把 clipping 当成参数裁剪
+
+PPO clipping 作用于 surrogate objective 的 probability ratio，不是直接对网络权重做 `clamp`，也不是对所有状态的 KL 做严格限制。
+
+### 14.3 忽略终止和截断
+
+错误的 bootstrap 会污染 GAE、returns 和 value loss，最终表现为 policy loss 看似正常但训练目标已经改变。
+
+### 14.4 只看 policy loss
+
+至少应同时监控：approx KL、clip fraction、entropy、value loss、explained variance、episode return 和 episode length。
+
+### 14.5 把 PPO 当成 off-policy replay
+
+PPO 会在同一轮更新内重复使用 rollout，但仍然是以当前策略采集数据的 on-policy 方法。旧 batch 不能像 SAC/DQN 的 replay buffer 那样长期无限复用。
+
+## 15. 把 PPO 放回强化学习路线
+
+```text
+DQN
+  │  Value-based learning
+  ▼
+Policy Gradient
+  │  Directly optimise the policy
+  ▼
+Actor-Critic + Advantage
+  │  Learn a lower-variance signal
+  ▼
+GAE
+  │  Balance short- and long-horizon evidence
+  ▼
+TRPO
+  │  Constrain policy movement with a trust region
+  ▼
+PPO
+  │  Use first-order optimisation with a conservative objective
+  ▼
+SAC and later off-policy actor-critic methods
+```
+
+因此 PPO 不应该被记成一个孤立的 `clip` 函数。它连接了 Policy Gradient、Actor-Critic、GAE 和 Trust Region，是理解后续大量 policy-optimization 方法的关键节点。
+
+## 16. 阅读后的自测问题
+
+1. 为什么 Vanilla Policy Gradient 不能放心地在同一批 trajectory 上无限重复更新？
+2. TRPO 的 trust region 想保护什么？
+3. 为什么 PPO 要使用 $r_t=\pi_\theta/\pi_{\mathrm{old}}$？
+4. 为什么 $A_t>0$ 时主要截断 $1+\epsilon$，而 $A_t<0$ 时主要截断 $1-\epsilon$？
+5. 为什么 PPO 使用 `min` 而不是只把 ratio 直接 clip 后代入？
+6. 为什么 PPO-Clip 不是 hard KL constraint？
+7. GAE 在 PPO 中负责什么，PPO 本身负责什么？
+8. 为什么同一 batch 上的 multiple epochs 与 clipping 必须一起理解？
+9. 为什么代码中常见 `exp(new_log_prob - old_log_prob)`？
+10. 为什么 termination 和 truncation 不能简单用一个 done 处理？
+
+## 总结
+
+PPO 真正解决的不是“如何设计一个 clip 函数”，而是：
+
+> **如何在保守改变 policy 的同时，提高 on-policy trajectory 的利用效率。**
+
+TRPO 通过显式 trust region 控制策略变化；PPO 则把这个思想改写成更容易用 SGD/Adam 优化的 clipped surrogate objective。`min` 让目标对过度有利的更新保持悲观，避免有限 batch 不断鼓励策略继续远离旧策略。
+
+完整 PPO 还需要把 policy objective、value loss、entropy bonus、GAE、old log probability、multiple epochs 和正确的 termination mask 放在同一个训练流程里理解。
+
+> **PPO = 用一阶优化器，让 policy 变好，但不要因为一次 rollout 就走得太远。**
+
+### References
+
+- Schulman, J., Wolski, F., Dhariwal, P., Radford, A., & Klimov, O. *Proximal Policy Optimization Algorithms*. arXiv:1707.06347, 2017.
+- [Original paper on arXiv](https://arxiv.org/abs/1707.06347)
+- [Berkeley Deep RL Course PPO homework](https://github.com/berkeleydeepRLcourse/homework/tree/master/hw4)
+- [OpenAI Spinning Up PPO](https://github.com/openai/spinningup/tree/master/spinup/algos/pytorch/ppo)
+- [OpenAI Baselines PPO2](https://github.com/openai/baselines/tree/master/baselines/ppo2)
+- [Stable-Baselines3 PPO](https://github.com/DLR-RM/stable-baselines3/tree/master/stable_baselines3/ppo)
+
+> 图 1–6 为原论文 PDF 中的 Figure 1–6 截图，用于论文阅读与讲解；图注和实验总结按论文相应章节整理。

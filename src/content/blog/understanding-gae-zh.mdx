@@ -414,6 +414,36 @@ def generalized_advantage(rewards, values, terminated, gamma=0.99, lam=0.95):
 
 把 termination 和 truncation 都简单当作 `done`，会系统性改变学习目标。
 
+### 8.2 开源代码与复现入口
+
+论文发表于 2016 年，实验所依赖的代码生态后来经历了迁移，因此需要区分“论文作者的实验代码”和“后来仍然方便阅读的公开实现”：
+
+- [rllab](https://github.com/rll/rllab)：论文时期常用的连续控制与 TRPO 实验框架。它包含 TRPO、连续控制环境和线性 baseline 等组件，但仓库已经停止积极维护，更适合用来阅读历史实现。
+- [OpenAI Baselines 的 `ppo1/pposgd_simple.py`](https://github.com/openai/baselines/blob/master/baselines/ppo1/pposgd_simple.py)：包含 `add_vtarg_and_adv`，可以直接看到 GAE 的反向递推、TD($\text{lambda}$) value target，以及 advantage normalization。
+- [OpenAI Baselines 的 `ppo2/runner.py`](https://github.com/openai/baselines/blob/master/baselines/ppo2/runner.py)：展示了向量化环境中如何使用 `nextnonterminal` 区分真正终止和 rollout 边界，并计算 `mb_advs`。
+- [OpenAI Spinning Up 的 TRPO 文档](https://spinningup.openai.com/en/latest/algorithms/trpo.html)：适合从算法整体上理解 TRPO 与 GAE 的配合关系。
+- [Reproducibility_GAE](https://github.com/lweitkamp/Reproducibility_GAE)：一个面向 GAE 公式和实现的教学/复现仓库，可以用来对照从 Monte Carlo、TD 到 GAE 的代码变化。
+
+需要注意：这些链接并不都声称是本文作者发布的“官方复现实验代码”。更准确的说法是：`rllab` 接近论文时代的实验框架，Baselines 和 Spinning Up 是后来更容易读懂的公开实现，而 `Reproducibility_GAE` 更偏向教学复现。实际运行旧版 rllab 还可能遇到 Python、Theano、MuJoCo 和 Gym 版本兼容问题。
+
+下面这段最小实现对应的就是论文公式，而不是某个框架的完整训练器：
+
+```python title="gae.py"
+def compute_gae(rewards, values, dones, last_value, gamma=0.99, lam=0.95):
+    advantages = torch.zeros_like(rewards)
+    gae = torch.zeros_like(last_value)
+
+    for t in reversed(range(len(rewards))):
+        next_value = last_value if t == len(rewards) - 1 else values[t + 1]
+        nonterminal = 1.0 - dones[t]
+        delta = rewards[t] + gamma * next_value * nonterminal - values[t]
+        gae = delta + gamma * lam * nonterminal * gae
+        advantages[t] = gae
+
+    returns = advantages + values
+    return advantages, returns
+```
+
 ## 9. TRPO 负责稳定，GAE 负责提供信号
 
 GAE 解决的是 Advantage 如何估计；TRPO 解决的是 policy 每一轮怎么安全地走。
