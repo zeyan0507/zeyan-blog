@@ -32,8 +32,8 @@ const rehypePlugins: RehypePlugins = [
     rehypeAutolinkHeadings,
     {
       behavior: 'append',
-      properties: { className: ['anchor'] },
-      content: { type: 'text', value: '#' }
+      properties: { className: ['anchor'], ariaHidden: 'true', tabIndex: -1 },
+      content: { type: 'text', value: '' }
     }
   ]
 ]

@@ -24,6 +24,7 @@ code, pre, kbd, samp { font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas
 .prose :where(h2) { margin-top: 2.8em; }
 .prose :where(h3) { margin-top: 2em; }
 .prose :where(a) { text-underline-offset: 0.18em; }
+.prose :where(a.anchor)::after { content: '#'; }
 .prose :where(blockquote) { border-inline-start-width: 2px; font-style: normal; }
 .prose :where(th) { font-weight: 600; }
 .prose :where(img) { border: 1px solid var(--rule); }
