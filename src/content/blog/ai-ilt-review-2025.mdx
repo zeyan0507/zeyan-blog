@@ -1,0 +1,525 @@
+---
+title: 'Reading AI-ILT: From Lithography Physics to Manufacturable Masks'
+description: 'A figure-led reading guide to a 2025 AI-ILT survey covering OPC, SOCS, level sets, learned lithography models, GAN-OPC, model-driven learning, RL boundaries, and mask manufacturing.'
+publishDate: '2026-10-10'
+updatedDate: '2026-10-10'
+category: paper-reading
+collection: paper-reading
+researchTopics:
+  - computational-lithography
+  - reinforcement-learning
+  - scientific-ml
+paper:
+  title: 'Advancements and challenges in inverse lithography technology: a review of artificial intelligence-based approaches'
+  authors: ['Yixin Yang', 'Kexuan Liu', 'Yunhui Gao', 'Chen Wang', 'Liangcai Cao']
+  year: 2025
+  venue: 'Light: Science & Applications'
+  url: 'https://doi.org/10.1038/s41377-025-01923-w'
+  doi: '10.1038/s41377-025-01923-w'
+tags:
+  - AI for engineering
+  - computational lithography
+  - OPC
+  - ILT
+  - SOCS
+  - level set
+  - model-driven deep learning
+  - reinforcement learning
+  - mask manufacturability
+  - paper reading
+language: English
+translationKey: ai-ilt-review-2025
+draft: false
+---
+
+import Figure from '@/components/article/Figure.astro'
+
+# Reading AI-ILT: From Lithography Physics to Manufacturable Masks
+
+> **Paper:** *Advancements and challenges in inverse lithography technology: a review of artificial intelligence-based approaches*<br />
+> **Authors:** Yixin Yang, Kexuan Liu, Yunhui Gao, Chen Wang, Liangcai Cao<br />
+> **Journal:** *Light: Science & Applications*, 2025, 14, Article 250<br />
+> **Source:** [DOI: 10.1038/s41377-025-01923-w](https://doi.org/10.1038/s41377-025-01923-w)
+
+This is a **Review Article**, not a paper proposing one new algorithm. Its value is in placing ILT physics, four decades of development, AI for forward modeling and inverse solving, and industrial manufacturing constraints in one framework.
+
+These notes combine my long-term notes with the paper's 11 figures. The figures are read first: Figures 1–3 establish lithography and OPC/ILT, Figures 4–6 explain ILT history, the mathematical chain, and level-set optimization, Figures 7–8 locate AI in physical models, Figures 9–10 cover GAN-OPC and model-driven deep learning, and Figure 11 returns to engineering deployment.
+
+Four labels separate claims from additions: **[Paper]**, **[Interpretation]**, **[To verify]**, and **[Research extension]**. A survey's summary of cited work is not a unified benchmark experiment; the RL reward sketch below is not an equation from the paper.
+
+## 0. One-minute overview
+
+### 0.1 One-sentence summary
+
+**ILT turns “what should be printed on the wafer?” into “what mask should be designed?” AI attacks the computational bottleneck from both sides—faster forward lithography models and faster mask solving—but physical reliability, process robustness, and mask manufacturability still decide whether a method can enter production.**
+
+$$
+\text{Mask}
+\xrightarrow{\text{forward lithography}}
+\text{Printed pattern}
+\quad\Longleftrightarrow\quad
+\text{Target}
+\xrightarrow{\text{inverse optimization}}
+\text{Mask}.
+$$
+
+### 0.2 Four questions answered by the paper
+
+1. **Why ILT?** As features shrink, OPE causes line-end shortening, corner rounding, and isolated/dense CD differences. Using the Target directly as the Mask becomes inadequate.
+2. **How is ILT solved?** A spatial imaging model and a photoresist model form a forward simulator; pixels, gradients, or level sets then optimize the Mask backward.
+3. **Where does AI enter?** One family accelerates near-field, aerial-image, resist, or etch models; another predicts an initial/final Mask or approximates traditional ILT iterations.
+4. **Why is the problem not solved?** Large layouts are expensive, tile boundaries can be inconsistent, thick masks and process variation add physical complexity, and curvilinear masks are not automatically easy to write.
+
+### 0.3 Knowledge graph
+
+```text
+Shrinking CD
+  ↓
+OPE: line-end shortening / corner rounding / isolated-dense difference
+  ↓
+RET: RBOPC / MBOPC / SRAF / SMO
+  ↓
+ILT: Mask synthesis as an inverse problem
+  ├─ Forward: Mask → aerial image → resist pattern
+  ├─ Inverse: Target → loss → Mask
+  └─ AI: accelerate models or optimization iterations
+
+Industrial usability: process window + MRC + MDP + shots + full-chip continuity
+```
+
+## 1. Figure 1: reading computational lithography through the process
+
+<Figure
+  src='/images/ilt-ai-review/figure-1-lithography-flow.png'
+  alt='Original Figure 1: IC lithography manufacturing flow and projection exposure system'
+  caption='Original Figure 1 (PDF page 3): coating, baking, exposure, development, etching, and related steps on the left; source, mask, projection optics, and wafer on the right.'
+/>
+
+The left half reminds us that exposure is not the entire manufacturing flow. Coating, baking, development, etching, and metrology also affect the final result. The right half decomposes projection exposure into light source, condenser, reticle mask, projection lens, photoresist, and wafer.
+
+This establishes an important boundary: an algorithm that optimizes an idealized Mask-to-image mapping without considering resist, etch, or mask-manufacturing effects is not automatically a complete manufacturing solution.
+
+The paper uses wavelength, NA, CD, and process factor to explain resolution scaling. As nodes shrink, reducing wavelength and increasing NA become more costly and complex, making OPC, SMO, and ILT increasingly important RETs.
+
+## 2. Figure 2: forward lithography and inverse computational lithography
+
+<Figure
+  src='/images/ilt-ai-review/figure-2-forward-inverse.png'
+  alt='Original Figure 2: forward lithography imaging and the inverse computational-lithography process'
+  caption='Original Figure 2 (PDF page 3): the optical system and Mask determine the wafer pattern in the forward direction; the inverse process recovers source and mask from the target wafer pattern.'
+/>
+
+Figure 2 is one of the paper's most important conceptual diagrams. The forward process is:
+
+$$
+(\text{source},M,\text{optics},\text{resist})
+\longrightarrow Z.
+$$
+
+Computational lithography reverses it:
+
+$$
+Z_{target}
+\longrightarrow (\text{source}^{*},M^{*})
+\longrightarrow Z\approx Z_{target}.
+$$
+
+In the broader computational-lithography setting, the variables need not be only the Mask; source can also be optimized, which leads to SMO. Ordinary ILT mainly solves for a Mask, while source-mask joint optimization adjusts both illumination and mask.
+
+The paper separates the lithography model into a spatial imaging model and a photoresist model. The first describes imaging from source to wafer; the second maps intensity or exposure into the final resist pattern.
+
+## 3. Figure 3: OPE, OPC, and the technology transition
+
+<Figure
+  src='/images/ilt-ai-review/figure-3-opc-evolution.png'
+  alt='Original Figure 3: OPE distortions, OPC compensation, and the evolution from RBOPC and MBOPC to ILT'
+  caption='Original Figure 3 (PDF page 4): no-OPC versus OPC exposure results on the left, and RBOPC, MBOPC, and ILT on the right.'
+/>
+
+In Figure 3a, the dark shape is the desired wafer pattern and the light shape is the exposure pattern. OPE causes:
+
+- **line-end shortening**;
+- **corner rounding**;
+- **isolated/dense CD differences** caused by neighborhood context.
+
+OPC does not try to make the exposure pattern look like the Mask. It deliberately pre-distorts the Mask so the wafer pattern approaches the desired pattern.
+
+The development in Figure 3b is not five independent parallel generations:
+
+| Route | Tunable object | Characteristic |
+|---|---|---|
+| RBOPC | Rule-dependent edge/feature corrections | Fast, but rule tables grow with node and pattern complexity |
+| MBOPC | Model-feedback shape movement | More physical, but requires repeated simulation |
+| EBOPC | Edge segments | Lower-dimensional, edge-centered parameterization |
+| PBOPC | Pixel transmittance/variables | Flexible, but more variables and manufacturing risk |
+| ILT | Mask representation in a global inverse problem | Can produce complex or curvilinear shapes at higher cost |
+
+The survey emphasizes ILT's potential for fidelity and process window, while computation and curvilinear-mask manufacturing remain long-term constraints.
+
+## 4. Figure 4: forty years of ILT does not mean AI replaced classical methods
+
+<Figure
+  src='/images/ilt-ai-review/figure-4-ilt-history.png'
+  alt='Original Figure 4: ILT history from 1981 pixel optimization to 2020 neural-network-based 3D mask synthesis'
+  caption='Original Figure 4 (PDF page 6): pixel flipping, continuous-transmittance masks, gradient and level-set methods, and later model-driven learning and neural 3D mask synthesis.'
+/>
+
+Figure 4 places several stages on one historical axis:
+
+1. **1981:** random pixel flipping searched for improved masks, treating Mask design as an optimization variable.
+2. **1985–1991:** continuous transmittance, projection operators, and branch-and-bound enriched representations and constraints.
+3. **2002–2006:** SMO, commercial ILT, and tape-outs moved ILT toward industrial exploration.
+4. **2007–2014:** gradients, regularization, DCT, parallelism, and multigrid reduced solving cost.
+5. **2009–2021:** level sets, process robustness, and stable time discretization developed.
+6. **After 2010:** machine learning entered ILT; DCNN, MCNN, DMDL, and GPU/RL-based 3D mask synthesis appeared around 2017–2020.
+
+**Do not read Figure 4 as “AI replaced ILT.”** AI was progressively inserted into forward models, initialization, iteration acceleration, and direct prediction, while physics and numerical optimization remain important reliability baselines.
+
+## 5. The mathematical path: how does SOCS produce an optimizable objective?
+
+### 5.1 Partially coherent imaging and TCC/SOCS
+
+Starting from Abbe/Hopkins theory, partially coherent illumination can be treated as multiple mutually incoherent point sources whose intensities add. After TCC decomposition, the SOCS form is:
+
+$$
+I(\mathbf r)=\sum_i \mu_i\,\left|h_i(\mathbf r)*M(\mathbf r)\right|^2.
+\tag{8}
+$$
+
+- $M$: Mask representation;
+- $h_i$: optical kernel from TCC decomposition;
+- $\mu_i$: kernel weight;
+- $I$: aerial image;
+- $*$: convolution.
+
+This matches the Hopkins/SOCS structure in the OpenILT notes: for a fixed optical system, TCC or kernels can be prepared once, while the Mask changes during optimization.
+
+### 5.2 Photoresist response
+
+The paper uses a sigmoid resist model:
+
+$$
+Z(\mathbf r)=\sigma(I(\mathbf r)),
+\qquad
+\sigma(I)=\frac{1}{1+\exp[-a(I-t_r)]}.
+\tag{9–10}
+$$
+
+$t_r$ is the resist threshold and $a$ controls transition steepness. The sigmoid enables gradient optimization, but does not mean that the final manufactured pattern remains continuous gray values. State whether evaluation uses continuous response, thresholded pattern, or contour error.
+
+### 5.3 ILT objective
+
+The squared $L_2$ pattern error is:
+
+$$
+\mathcal L(M)=\left\|Z(M)-Z_{target}\right\|_2^2,
+\qquad
+M^{*}=\arg\min_M\mathcal L(M).
+\tag{11–12}
+$$
+
+Expanded:
+
+$$
+\mathcal L(M)=
+\left\|
+\sigma\!\left(\sum_i\mu_i|h_i*M|^2\right)
+-Z_{target}
+\right\|_2^2.
+$$
+
+The loop is:
+
+```text
+Mask M → optical kernels / SOCS → aerial image I
+      → resist response σ → printed Z
+      → compare with target → loss L(M)
+      → optimizer → new Mask
+```
+
+**[Interpretation]** With automatic differentiation, the dependency can be summarized as:
+
+$$
+\frac{\partial\mathcal L}{\partial M}
+=\frac{\partial\mathcal L}{\partial Z}
+\frac{\partial Z}{\partial I}
+\frac{\partial I}{\partial M}.
+$$
+
+Actual implementations must also handle complex convolution, padding, Mask parameterization, and the location of thresholding.
+
+## 6. Figure 5: how does a level set represent and update a curvilinear Mask?
+
+<Figure
+  src='/images/ilt-ai-review/figure-5-level-set-workflow.png'
+  alt='Original Figure 5: level-set contour representation and the rasterization, simulation, and gradient-descent workflow of ILT'
+  caption='Original Figure 5 (PDF page 7): the zero level set represents the contour; each iteration rasterizes it, computes the aerial image, cost field, and gradient, and updates the level-set surface.'
+/>
+
+### 6.1 Zero level set
+
+An implicit function $\phi$ represents the contour:
+
+$$
+\partial\Omega=\{\mathbf r:\phi(\mathbf r)=0\}.
+$$
+
+The sign of $\phi$ separates the inside and outside. The paper's compact sign conventions require care; code must consistently define whether the interior is positive or negative and what foreground polarity is used.
+
+### 6.2 ILT workflow
+
+Figure 5b can be read as:
+
+1. Specify the target, illumination, kernels, and initial Mask.
+2. Represent the Mask contour by a level-set surface.
+3. Intersect with the zero level set and rasterize a simulation Mask.
+4. Compute the aerial image, resist pattern, and cost field.
+5. Compute a gradient or velocity field.
+6. Update the surface with gradient descent.
+7. Repeat until convergence and output the Mask.
+
+The two-dimensional interface evolution is:
+
+$$
+\frac{\partial\phi}{\partial t}
++v_x\frac{\partial\phi}{\partial x}
++v_y\frac{\partial\phi}{\partial y}=0,
+\tag{16}
+$$
+
+and normal evolution can be written as:
+
+$$
+\frac{\partial\phi}{\partial t}+v|\nabla\phi|=0.
+\tag{17}
+$$
+
+Here $t$ is a fictitious evolution time or iteration coordinate, not exposure time. Level sets naturally express contour motion, splitting, and merging, but every iteration still depends on expensive lithography simulation.
+
+## 7. Figure 6: how should ILT results under different illumination be read?
+
+<Figure
+  src='/images/ilt-ai-review/figure-6-illumination-ilt.png'
+  alt='Original Figure 6: ILT masks and resist results under conventional, annular, horizontal-dipole, vertical-dipole, and Quasar illumination'
+  caption='Original Figure 6 (PDF page 9): initial resist, optimized Mask, binary Mask, optimized resist, and cost convergence for a THU target under five illumination sources.'
+/>
+
+Each panel includes a target mask, source, initial resist, optimized mask, binarized mask, and optimized resist. The figure does not say that one illumination is always best. It shows that:
+
+- source shape changes imaging conditions;
+- the same target has different initial distortions under different sources;
+- ILT searches for a Mask compatible with the source;
+- Mask, resist pattern, and cost curve should be inspected together.
+
+The convergence in Figure 6f shows cost reduction under the paper's simulation and initialization settings. It does not establish the same convergence speed or global optimality for every source, layout, or process corner.
+
+## 8. Figures 7–8: which forward model is AI accelerating?
+
+<Figure
+  src='/images/ilt-ai-review/figure-7-ai-model-components.png'
+  alt='Original Figure 7: where AI enters lithography, mask, photoresist, and etching models'
+  caption='Original Figure 7 (PDF page 10): AI is not limited to Mask generation; it can enter lithography, mask, photoresist, and etching models.'
+/>
+
+Figure 7 identifies four insertion points: lithography model, mask model, photoresist model, and etching model. Ask which physical calculation is replaced, rather than saying simply that “AI accelerates ILT.”
+
+### 8.1 Thick masks and 3D near fields
+
+When Mask CD becomes comparable to the wavelength, a thin-mask approximation can fail and DNF plus rigorous EMF simulation may be needed. EMF is accurate but expensive, so learned models can learn near-field or diffraction responses from EMF data.
+
+The survey discusses sparse sampling, regression, FCNs, DTM, and AFCN. It reports up to **1170×** speedup for TEMPO's 3D aerial-image prediction relative to rigorous simulation, and around two orders of magnitude for another thick-mask model relative to EMF. These are results under separate cited conditions, not a unified ranking.
+
+<Figure
+  src='/images/ilt-ai-review/figure-8-ai-lithography-models-a.png'
+  alt='Upper part of Original Figure 8: compressed-sensing source optimization, AFCN, DTM, and thick-mask DNF learning'
+  caption='Upper part of Original Figure 8 (PDF page 12): AI for source optimization, EUV aerial images, thick-mask DNF, and high-NA EUV SMO.'
+/>
+
+<Figure
+  src='/images/ilt-ai-review/figure-8-ai-lithography-models-b.png'
+  alt='Lower legend of Original Figure 8: explanations of the AI-based lithography optimization panels'
+  caption='Lower legend of Original Figure 8 (PDF page 13): panel descriptions for Figure 8. The figure spans two pages and should be read continuously.'
+/>
+
+### 8.2 Resist and etch models
+
+AI can also model resist and etch processes:
+
+- rigorous physical models are interpretable but expensive;
+- compact or empirical models are fast but may lose physical meaning;
+- neural networks, SVMs, and genetic-algorithm-assisted models can predict etch rate, etch bias, and profiles.
+
+AI-ILT should therefore not be evaluated only by Mask generation. A Mask that looks good at the aerial-image stage can still fail in the final manufactured contour if resist and etch errors are omitted.
+
+## 9. Figure 9: where do GAN-OPC and PGAN-OPC fit?
+
+<Figure
+  src='/images/ilt-ai-review/figure-9-gan-opc.png'
+  alt='Original Figure 9: GAN-OPC, ILT-guided pretraining, PGAN-OPC results, and a VAE structure'
+  caption='Original Figure 9 (PDF page 14): GAN-OPC learns Target-to-Mask mapping, PGAN-OPC adds ILT-guided pretraining, and the results compare Masks, wafer patterns, and targets.'
+/>
+
+### 9.1 GAN-OPC's insertion point
+
+GAN-OPC belongs to Route B: accelerating inverse Mask optimization rather than serving as a forward lithography surrogate.
+
+- The Generator learns a nonlinear Target-to-Mask mapping;
+- a lithography-aware loss or simulator constrains the generated result;
+- PGAN-OPC uses ILT results during pretraining to provide better initial knowledge;
+- inference can reduce subsequent traditional ILT iterations.
+
+### 9.2 Average results reported by the survey
+
+| Metric | ILT | GAN-OPC | PGAN-OPC |
+|---|---:|---:|---:|
+| Nominal squared L2 | 44,012.7 | 40,094.6 | 39,948.9 |
+| PVB (±2% dose) | 50,899.5 | 50,568.1 | 49,957.2 |
+| Average runtime/s | 788.5 | 384.7 | 371.3 |
+
+The survey summarizes these tests as roughly 9% lower squared L2 and about half the runtime for GAN-OPC/PGAN-OPC, with PGAN-OPC slightly better than GAN-OPC.
+
+**Evidence boundary:** these values do not tell us whether training time is included, what hardware and stopping criteria were used, whether train/test layouts were independent, whether MRC was applied, or how L2/PVB relate to yield. Read the original GAN-OPC paper for those details.
+
+## 10. Figure 10: model-driven deep learning is not ordinary image-to-image prediction
+
+<Figure
+  src='/images/ilt-ai-review/figure-10-model-driven-dl.png'
+  alt='Original Figure 10: model-driven deep-learning methods including MCNN, DMDL, and PCI-MIDL'
+  caption='Original Figure 10 (PDF page 15): physical imaging, algorithm unrolling, and partially coherent illumination priors embedded in deep networks.'
+/>
+
+Purely data-driven networks may require expensive training data, violate physical constraints, and generalize poorly when nodes or processes change. MDL places physical models, gradient updates, or ILT iteration priors inside the network.
+
+| Method | Core idea |
+|---|---|
+| MCNN | Unroll and truncate gradient-based ILT into a model-driven CNN |
+| DMDL | Predict main features and SRAFs through a dual-channel structure |
+| PCI-MIDL | Extend model-informed learning to partially coherent illumination |
+
+A useful mental model is:
+
+```text
+Pure physics solver: reliable structure + high iteration cost
+             ↓
+Model-driven learning: physical prior + learnable parameters
+             ↓
+Pure data network: fast inference + stronger data/generalization risk
+```
+
+A network derived from an optimization algorithm is not strictly equivalent to the converged optimizer. Finite depth, training distribution, and forward-model quality still determine behavior.
+
+## 11. Figure 11: returning from algorithmic metrics to engineering
+
+<Figure
+  src='/images/ilt-ai-review/figure-11-challenges-outlook.png'
+  alt='Original Figure 11: ILT challenges and outlook including shrinking CD, simulation accuracy, computational efficiency, full-chip scale, and mask manufacturing complexity'
+  caption='Original Figure 11 (PDF page 16): ILT must address CD, simulation accuracy, computational efficiency, large-scale ICs, and mask manufacturing complexity together.'
+/>
+
+Figure 11 shows coupled constraints:
+
+- **CD shrink:** smaller features amplify optical and process errors;
+- **simulation accuracy:** simple models are fast but may lose physics, while rigorous models are expensive;
+- **computational efficiency:** full-chip and multiple corners make simulation and optimization costly;
+- **large-scale IC:** partitioning, memory, data preparation, and boundary healing must be co-designed;
+- **mask manufacturing:** curvilinear masks, MRC, MPC, MDP, VSB/SVSB, MBMW, and shots determine manufacturability.
+
+### 11.1 Engineering terms are not interchangeable
+
+| Term | Focus |
+|---|---|
+| Curvilinear mask | Flexible geometry that may increase writing complexity |
+| Manhattanization | Horizontal/vertical approximation of curves, with shape error |
+| MRC | Mask rule compliance |
+| MPC | Correction for mask-writing process effects |
+| MDP | Conversion of layout into writer data |
+| Shot count | Electron-beam writing workload |
+| MBMW | Multi-beam writing better suited to complex curves |
+
+The paper also mentions CuLitho and an approximately 40× GPU acceleration report as industry progress. This is cited industry information, not an independent unified experiment in the review.
+
+## 12. Two AI-ILT routes
+
+| Route | Accelerated object | Typical input → output | Main risk |
+|---|---|---|---|
+| A. Forward/model acceleration | Near field, aerial image, resist, etch | Mask/process → physical image/profile | Approximation error accumulates in optimization |
+| B. Inverse/Mask acceleration | Initialization, iterations, or direct Mask generation | Target → initial/optimized Mask | Physics, generalization, MRC, and manufacturing guarantees |
+
+**Do not confuse them:** GAN-generated Masks and GAN-predicted aerial/resist images may use the same network family, but their supervision, outputs, metrics, and relationship to physics are different.
+
+## 13. Reinforcement learning: what does the paper say and not say?
+
+### 13.1 RL information actually supported by the paper
+
+In its historical discussion, the survey mentions a 2020 Synopsys 3D mask-synthesis work involving TensorFlow, RL, and GPU acceleration. In its outlook, it suggests that deep learning and RL may enable an automatic Mask-generation flow.
+
+However, the paper does not systematically provide the state, action, reward, environment interface, training data, or detailed protocol of that RL method. It therefore cannot establish a standard RL-OPC reward or prove that RL outperforms classical ILT.
+
+### 13.2 A reward prototype explicitly marked as research extension
+
+For a small future experiment, one could consider:
+
+$$
+r_t=
+\underbrace{\mathcal J(M_t)-\mathcal J(M_{t+1})}_{\text{quality improvement}}
+-\lambda_c C_{MRC}(M_{t+1})
+-\lambda_s c_{step}.
+$$
+
+This expresses a trade-off among quality improvement, manufacturing-rule penalties, and interaction cost. It is not the original equation of this paper or a cited RL method.
+
+### 13.3 Why begin with a low-dimensional subproblem?
+
+Compared with unconstrained actions over a full high-dimensional pixel matrix, a small clip, limited edge movements, or local SRAFs make it easier to:
+
+- prove that an action really changes the Mask;
+- compare greedy, random, gradient, and RL methods under the same simulation budget;
+- measure sample efficiency through simulation calls;
+- separate strategy failure from coordinate, padding, polarity, or simulator errors.
+
+Minimum baselines should include no correction, rule correction, random/greedy search, and classical gradient optimization.
+
+## 14. How should the review be interpreted?
+
+### 14.1 Three core values
+
+1. **Unified problem framing:** RBOPC, MBOPC, PBOPC, EBOPC, and ILT are connected through the same inverse-problem setting.
+2. **AI's role levels:** AI can accelerate a simulator, generate initialization, predict a Mask, embed model-driven networks, or make sequential decisions.
+3. **Explicit engineering constraints:** fidelity, process window, runtime, full-chip scale, and manufacturability must be considered together.
+
+### 14.2 Evidence boundaries
+
+- This is a cross-work survey, not a unified ranking on one benchmark.
+- Speedups come from different models, hardware, and test settings and cannot be sorted directly.
+- EUV/DUV, NA, node, resist, and Mask models may differ.
+- AI/RL details require reading the original papers.
+- Lower pattern error does not automatically mean a larger process window or easier manufacturing.
+
+## 15. Long-term reading and reproduction checklist
+
+- [ ] Explain OPE, OPC, ILT, SRAF, SMO, and process window.
+- [ ] Distinguish EBOPC edge variables, PBOPC pixel variables, and level-set contour variables.
+- [ ] Explain SOCS kernels, Mask convolution, and aerial image from Equation (8).
+- [ ] Write and test the $M\to I\to Z\to\mathcal L$ chain.
+- [ ] Evaluate error and robustness separately under nominal and dose/focus variation.
+- [ ] Explain how changing the source affects the ILT results in Figure 6.
+- [ ] Distinguish GAN-OPC/PGAN-OPC inverse Mask generation from forward surrogates.
+- [ ] Explain why MCNN, DMDL, and PCI-MIDL are not purely black-box mappings.
+- [ ] List at least three non-imaging Mask manufacturing constraints.
+- [ ] Avoid unsupported reward, state, or action claims before reading the original RL material.
+
+## 16. Synthesis
+
+The central lesson is: **OPC/ILT is a physics-constrained inverse problem, not ordinary image restoration. The value of AI depends on which computation it replaces and whether enough physical and manufacturing structure remains.**
+
+- The forward chain is `Mask → optical model → aerial image → resist/etch → wafer pattern`;
+- the inverse chain is `Target → loss → Mask`;
+- AI can accelerate the forward model or inverse Mask optimization;
+- MDL puts physical structure and optimization priors into the network to balance black-box speed and physical reliability;
+- industrial success also requires process window, full-chip scalability, MRC/MPC/MDP, writing time, and curvilinear-mask manufacturing.
+
+> **Long-term anchor: simulation determines optimization credibility, optimization determines Mask quality, and manufacturing constraints determine whether the result can enter production. AI can advance ILT only by addressing all three layers.**
+
+**Main paper:** Yang, Y., Liu, K., Gao, Y., Wang, C., & Cao, L. (2025). *Advancements and challenges in inverse lithography technology: a review of artificial intelligence-based approaches*. *Light: Science & Applications, 14*, 250. [DOI](https://doi.org/10.1038/s41377-025-01923-w)
+
+These are English reading notes and interpretation, not a verbatim translation or new experimental results. Equations, tables, and figures were checked against the paper; extensions and the RL reward prototype are labeled separately. The paper is open access, but third-party credit lines should still be checked before reusing individual figures.

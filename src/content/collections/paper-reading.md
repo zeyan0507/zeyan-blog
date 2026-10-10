@@ -12,6 +12,7 @@ posts:
   - understanding-sac
   - understanding-openilt
   - large-scale-mask-survey
+  - ai-ilt-review-2025
 status: Active
 ---
 
