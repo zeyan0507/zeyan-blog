@@ -1,0 +1,482 @@
+---
+title: 'Large-Scale VLSI Mask Optimization: From Simulation to Full Chip'
+description: 'A paper-grounded survey guide explaining OPC, ILT, learned lithography simulation, RL-OPC/CAMO, full-chip frameworks, five key figures, and open research problems.'
+publishDate: '2026-10-10'
+updatedDate: '2026-10-10'
+category: paper-reading
+collection: paper-reading
+researchTopics:
+  - computational-lithography
+  - reinforcement-learning
+  - scientific-ml
+paper:
+  title: 'Large-Scale VLSI Mask Optimization: A Survey'
+  authors: ['Ziyang Yu', 'Bei Yu']
+  venue: 'Survey'
+  url: 'https://doi.org/10.1117/1.JMM.20.3.030901'
+tags:
+  - VLSI
+  - computational lithography
+  - OPC
+  - ILT
+  - reinforcement learning
+  - scientific machine learning
+  - full chip
+  - paper reading
+language: English
+translationKey: large-scale-mask-survey
+draft: false
+---
+
+import Figure from '@/components/article/Figure.astro'
+
+# Large-Scale VLSI Mask Optimization: From Simulation to Full Chip
+
+> **Paper:** *Large-Scale VLSI Mask Optimization: A Survey*<br />
+> **Authors:** Ziyang Yu and Bei Yu, Chinese University of Hong Kong<br />
+> **Type:** Survey paper, 9 pages of main text and 3 pages of references<br />
+> **Code and related reading:** [OpenILT](https://github.com/OpenOPC/OpenILT) · [CAMO](https://arxiv.org/abs/2404.00980)
+
+This is not a complete technical paper on one OPC, ILT, or reinforcement-learning algorithm. It is a **map of large-scale computational lithography**. Its central question is how to move mask optimization from local hotspot demonstrations toward engineering flows that are fast enough, accurate enough, and able to handle real full-chip designs under manufacturing constraints.
+
+These notes follow the paper's five key figures. The figures are not decoration: Figure 1 describes technology evolution, Figure 2 describes forward simulation, Figure 3 shows what learned simulators actually replace, Figure 4 locates optimization paradigms, and Figure 5 explains how full-chip systems address scale, pattern reuse, and boundary continuity.
+
+Four labels separate claims from additions: **[Paper]**, **[Interpretation]**, **[To verify]**, and **[Research extension]**. Do not treat a survey's summary of cited papers as a unified experiment rerun on one benchmark.
+
+## 0. Five-minute overview: the survey's main line
+
+### 0.1 One-sentence summary
+
+**Large-scale mask optimization is not only about inventing a stronger optimizer. It must solve three coupled problems: lithography simulation must be fast, mask search must be effective, and the full-chip system must absorb real layout scale and manufacturing constraints.**
+
+$$
+\text{Fast simulation}
+\rightarrow\text{Better mask optimization}
+\rightarrow\text{Full-chip integration}.
+$$
+
+### 0.2 Three-layer technology map
+
+| Layer | Main question | Representative routes |
+|---|---|---|
+| Forward simulation | Given a Mask, how can wafer patterns be predicted quickly? | Hopkins/SOCS/FFT, GPUs, LithoGAN, DAMO, DOINN, Nitho |
+| Inverse optimization | Given a Target, how can a high-quality, manufacturable Mask be generated? | MOSAIC, GLS-ILT, Multi-level ILT, OpenILT, GAN-OPC, DevelSet, RL-OPC, CAMO |
+| System deployment | How can a method move from clips to a real full chip? | Overlapped tiling, D2S, DAMO, AdaOPC 2.0, FuILT |
+
+### 0.3 Four conclusions to retain
+
+1. **ILT is an inverse problem, not simply drawing a prettier mask.** A Mask produces a wafer pattern only through optical and resist models, so the objective must be defined through forward simulation.
+2. **The location of AI matters.** A model may replace simulation, predict an initial Mask, guide each update, or make sequential decisions. These are different forms of “AI + ILT.”
+3. **Local metrics are not full-chip capability.** EPE, L2, or runtime on a clip does not imply boundary continuity, memory scalability, or layer-level throughput.
+4. **A survey is a search map, not a unified leaderboard.** Cited studies generally use different data, process corners, hardware, and evaluation conditions.
+
+## 1. Problem definition: why should Mask differ from Target?
+
+### 1.1 From design pattern to wafer pattern
+
+**[Paper | Section 1]** When VLSI features become smaller than the exposure wavelength, diffraction, interference, and process variation obstruct faithful transfer from Mask to wafer. Mask optimization deliberately modifies the layout and inserts SRAFs to pre-compensate lithographic distortion.
+
+**[Interpretation]** Design tools specify what should appear on the wafer: the Target. The exposure system needs a Mask shape that will produce that result. The two are often intentionally different.
+
+```text
+Target layout
+     │
+     ▼
+Mask generation / optimization ──► Mask
+                                      │
+                                      ▼
+                            Optical imaging
+                                      │
+                                      ▼
+                         Aerial image / resist model
+                                      │
+                                      ▼
+                              Printed pattern
+                                      │
+                                      ▼
+                         Compare with Target → update
+```
+
+The key distinction is: **lithography simulation is a forward problem; OPC/ILT is an inverse optimization built on that forward problem.**
+
+### 1.2 OPC, SRAF, MBOPC, and ILT
+
+| Technique | What it does | Main trade-off |
+|---|---|---|
+| Rule-based OPC | Modifies edges using width, spacing, line-end, and related rules | Fast and direct, but dependent on rule coverage |
+| Model-based OPC | Repeatedly moves polygon edges using a lithography model | More physical, but requires repeated simulation |
+| SRAF | Adds assist features near the main pattern, usually intended not to print | Improves the main pattern's optical field while adding rule constraints |
+| Pixel-based ILT | Inverts the mask in a high-dimensional pixel or continuous representation | Flexible search space, but expensive and difficult to manufacture |
+
+The survey notes that ILT can improve pattern fidelity and process window, while full-layer ILT may require thousands of CPU cores for days. Unconstrained optimization also creates complex curvilinear masks that conventional writers may struggle to handle. A smaller simulation error therefore does not automatically imply greater engineering value.
+
+### 1.3 Three coupled bottlenecks
+
+Each Mask update typically calls a lithography simulator, creating three bottlenecks:
+
+1. **Simulation:** one forward pass is too slow, so optimization cannot scale.
+2. **Search:** the Mask space is huge, objectives conflict, and convergence may be slow or unstable.
+3. **Deployment:** even a successful clip solver faces partition boundaries, memory, communication, and throughput on a full chip.
+
+This is why the paper is organized around simulation, optimization, full-chip systems, and open challenges.
+
+## 2. Figure 1: how should the technology-evolution diagram be read?
+
+<Figure
+  src='/images/large-scale-mask-survey/figure-1-evolution.png'
+  alt='Original Figure 1: evolution from no correction through rule or model OPC and assist features to ILT'
+  caption='Original Figure 1 (PDF page 2): mask optimization evolves from no correction through rule/model OPC and SRAFs toward ILT embedded in computational lithography.'
+/>
+
+The horizontal axis roughly conveys historical progression, while the vertical objects remain the lithography chain: source, lens, mask, projection lens, and wafer. The important message is not the exact dates but the change in optimization objects and computation:
+
+- **No Correction** treats the Mask as approximately the design pattern and does not actively compensate imaging distortion.
+- **Rule/model-based OPC** begins moving edges using rules or lithography models.
+- **Assist Features** alter the local optical field rather than directly serving as the main pattern.
+- **ILT** formulates Mask synthesis as an inverse imaging problem with a more flexible representation.
+- **Computational Lithography** is not one algorithm; it combines forward imaging, simulation, optimization, and evaluation as a system-level field.
+
+**Figure 1's core message:** the evolution is not simply “rules replaced by neural networks.” It moves from manual rules toward model-driven correction, inverse problems, and co-design with computation. More flexible algorithms generally depend more on simulation, compute, and manufacturing constraints.
+
+**Do not overread it:** Figure 1 is a conceptual evolution diagram, not a strict timeline, performance ranking, or adoption statistic.
+
+## 3. Figure 2: lithography simulation is the foundation
+
+<Figure
+  src='/images/large-scale-mask-survey/figure-2-lithography-system.png'
+  alt='Original Figure 2: lithography-system components and the simulation flow from Mask through Aerial Image to Resist'
+  caption='Original Figure 2 (PDF page 3): illumination source, lenses, pupil, mask, resist, and substrate on the left; Mask → optical model → aerial image → resist on the right.'
+/>
+
+### 3.1 The left half: physical components
+
+The left half draws source → condenser/lens → pupil/lens → mask → projection lens → wafer/resist. Lithography is not simply a blur applied to a binary image: partial coherence, diffraction, aperture, mask effects, and resist development all matter.
+
+### 3.2 The right half: simulation data flow
+
+The right half maps naturally to OpenILT notation:
+
+$$
+M \xrightarrow{\text{optical model}} I
+\xrightarrow{\text{resist model / threshold}} Z.
+$$
+
+- `M` is the evaluated Mask;
+- the optical model produces `I`, usually called an aerial image or intensity;
+- the resist model or threshold maps `I` to printed pattern `Z`;
+- `Z` is compared with the Target to produce EPE, L2, PVB, process-window, and related feedback.
+
+The paper discusses Hopkins formulations, multiple kernels, and SOCS/FFT acceleration. The open simulator and benchmark from the ICCAD-2013 mask optimization contest support reproducible research. Commercial tools such as Calibre provide calibration and process integration, but their proprietary nature limits open benchmarking.
+
+### 3.3 Why simulation speed controls optimization scale
+
+If one Mask update requires one or several process-corner simulations, an optimizer is bounded by forward latency. Acceleration routes include:
+
+- sparse representations, domain decomposition, and simplified models;
+- FFT convolution and GPU parallelism;
+- learned surrogates for aerial images or printed contours;
+- choosing an appropriate point on the speed versus physical-consistency trade-off.
+
+**Key test:** a surrogate is not acceptable merely because it is fast. Ask whether it predicts an aerial image, resist image, or final contour; whether it remains reliable on new patterns, layers, and process corners; and whether its error is amplified by iterative optimization.
+
+## 4. Figure 3: what exactly does a learned simulator replace?
+
+<Figure
+  src='/images/large-scale-mask-survey/figure-3-surrogate-simulators.png'
+  alt='Original Figure 3: four learned lithography simulation frameworks, LithoGAN, DAMO, DOINN, and Nitho'
+  caption='Original Figure 3 (PDF page 4): four learned lithography simulation frameworks. The right comparison is which part of the forward pipeline each method replaces or preserves, not a ranking of network names.'
+/>
+
+The four subfigures represent different ways of inserting learning into simulation.
+
+### 4.1 LithoGAN: generative Mask-to-printed mapping
+
+(a) LithoGAN uses a conditional GAN to learn a Mask-to-resist/printed-pattern mapping, with an additional center-coordinate regression branch. Its intuition is to approximate lithographic output directly; the survey notes a scope limitation around settings such as single-contact prediction.
+
+**Read it as:** an image-to-image surrogate, not a complete ILT solver. It replaces forward prediction; whether it also supplies useful gradients for optimization is a separate system question.
+
+### 4.2 DAMO: nested U-Net for speed and scale
+
+(b) DAMO uses a nested U-Net (DLS) and RGB-channel encoding of Mask patterns to predict wafer images quickly. The survey discusses DAMO both as a surrogate simulator and as a full-chip framework because faster forward prediction directly reduces large-scale optimization cost.
+
+**Read it as:** a combination of input encoding, network capacity, and full-chip partition/optimization flow, not merely “a U-Net.”
+
+### 4.3 DOINN: long-range optical priors in an FNO
+
+(c) DOINN uses a Fourier Neural Operator for long-range optical effects and a shallow CNN for local edge details. Lithographic patterns are not governed only by local pixels; the frequency-domain structure of an FNO is a way to encode longer-range operator relationships.
+
+**Read it as:** a combination of physical structure and network inductive bias, not simply a deeper CNN. Cross-pattern and cross-process generalization still needs verification.
+
+### 4.4 Nitho: learn kernels, then reconstruct with SOCS
+
+(d) Nitho uses a physics-informed coordinate network to regress complex optical kernels and reconstructs the aerial image through SOCS. Compared with direct contour prediction, this preserves a clearer physical computation interface and is therefore suited to repeated use as an aerial-image engine.
+
+**A useful comparison:**
+
+| Method | Learned object or replaced part | How much physical structure remains explicit? |
+|---|---|---|
+| LithoGAN | Mask → printed/resist mapping | More end-to-end |
+| DAMO | Fast wafer-image prediction | Network and system scale are co-designed |
+| DOINN | Long-range operator plus local detail | Explicit FNO prior |
+| Nitho | Complex optical kernels followed by SOCS | Clearer physical reconstruction path |
+
+**The figure does not establish:** that Nitho is always more accurate than DAMO, or that every surrogate can replace a calibrated commercial simulator without qualification. It shows framework differences, not a unified ranking.
+
+## 5. Figure 4: what changes from numerical ILT to RL?
+
+<Figure
+  src='/images/large-scale-mask-survey/figure-4-optimization-methods.png'
+  alt='Original Figure 4: frameworks for MOSAIC, GLS-ILT, Multi-level ILT, GAN-OPC, Neural-ILT 2.0, SRAF dictionary learning, DevelSet, RL-OPC, and CAMO'
+  caption='Original Figure 4 (PDF page 6): representative mask-optimization frameworks. Read it by representation, update mechanism, learning role, and sequential decision structure, not as a leaderboard.'
+/>
+
+Figure 4 is easy to misread. It places different paradigms side by side rather than plotting nine methods on one performance curve. For each subfigure, ask:
+
+1. Is the Mask represented by pixels, a level set, a neural output, or a graph?
+2. Do updates come from gradients, a network forward pass, a heuristic module, or an RL action?
+3. Is lithography simulation inside the loop, used during training, or replaced by a surrogate?
+4. Does the objective include EPE, process window, mask complexity, and manufacturability?
+
+### 5.1 Numerical routes
+
+- **MOSAIC:** pixel-level mask adjustment with nominal fidelity and process-window objectives, including fast and exact gradient routes.
+- **GLS-ILT:** level-set contour evolution with CUDA/FFT acceleration, emphasizing smooth masks and shorter runtime.
+- **Multi-level ILT:** coarse-resolution optimization followed by native-resolution refinement, delaying expensive high-resolution computation.
+- **RMO-ILT:** simultaneous treatment of process corners through a more rigorous multi-objective formulation.
+- **CTM-SRAF:** extracts SRAF guidance from a continuous transmission mask, linking pixel-based ILT with rule-constrained assist-feature generation.
+
+These methods change objectives, representations, resolution schedules, and underlying computation. Innovation does not mean only inventing a new network.
+
+### 5.2 Where OpenILT fits
+
+The survey places OpenILT as infrastructure: interoperable lithography simulation, initialization, solver, and evaluation components, implemented with PyTorch for GPU and learning integration, reproducing MOSAIC, GLS-ILT, and multi-level ILT routes.
+
+Its value is that shared conditions make it easier to ask whether an improvement comes from initialization, optimizer, simulator, or evaluation. This is the same “platform problem” emphasized in my earlier OpenILT notes.
+
+### 5.3 Learned and hybrid routes
+
+- **GAN-OPC:** generates a manufacturable-looking Mask from a Target with a lithography-aware loss.
+- **Printability predictor:** predicts EPE or printed results to guide segment correction and reduce expensive iterations.
+- **SRAF dictionary learning / GAN-SRAF:** learns compact assist-feature representations or generates SRAFs directly.
+- **Neural-ILT 2.0:** predicts ILT solutions with a domain-specific multi-task network, partially turning iteration into one-shot prediction.
+- **DevelSet:** combines a neural level set with a CUDA optimizer for speed, smoothness, and printability.
+- **L2O-ILT:** unrolls ILT iterations as network layers to learn updates or a strong initialization.
+- **ILILT:** uses an implicit differentiable lithography layer and process-conditioned inputs to reduce dependence on a traditional solver in the loop.
+
+### 5.4 RL-OPC and CAMO: sequential decisions enter OPC
+
+**[Paper]** RL-OPC models edge movement as an action and trains a policy with rewards related to EPE and process-window improvement. CAMO adds a segment graph, GNN, recurrent module, and OPC-inspired modulator that biases action probabilities using current EPE.
+
+The following table is a reading framework, not a reconstruction of details absent from the survey:
+
+| RL element | Confirmed by the survey | Must be checked in the original paper |
+|---|---|---|
+| State | Related to current Mask/correction state | Encoding, receptive field, and process-condition inputs |
+| Action | Edge/segment movement | Discrete or continuous, number of segments, displacement constraints |
+| Reward | Related to EPE and process-window improvement | Formula, normalization, cost penalties, and weights |
+| Transition | Re-evaluation after Mask changes | Full simulation per step, termination, and budget |
+| Policy | Deep reinforcement-learning policy | Algorithm, sampling, and train/test separation |
+
+**Important boundary:** the survey does not give the exact RL-OPC reward formula. A personal $r_t$ must not be presented as the original RL-OPC equation. A2-ILT appears near the RL discussion, but its original paper should be checked before classifying it as standard RL.
+
+CAMO's useful motivation is not that “GNNs always beat CNNs.” Neighboring segment actions interact, and a graph may express that structure naturally. Performance still depends on action space, simulation budget, data, and evaluation.
+
+## 6. Metric map: do not look at one score alone
+
+| Metric | What it measures | Limitation when used alone |
+|---|---|---|
+| EPE | Printed-edge displacement or violations relative to the target edge | Depends on sampling, threshold, and aggregation |
+| L2 | Overall image or region error | Can hide important edge errors |
+| PVB | Printed-contour variation across process conditions | Corners and calculation convention must be explicit |
+| Process window | Focus/exposure conditions that meet specifications | Not equivalent to nominal accuracy |
+| Shot count / mask complexity | Writing or geometry-related cost | Depends on equipment, fracture, and writer conditions |
+| Runtime / throughput | Per-optimization time and scale-level processing capacity | Hardware, quality targets, and timing scope must match |
+
+**Practical rule:** do not say that a method is simply “better.” State on which patterns, process conditions, metrics, and compute budget it is better.
+
+## 7. Figure 5: full-chip optimization is continuity plus systems co-design
+
+<Figure
+  src='/images/large-scale-mask-survey/figure-5-full-chip-frameworks.png'
+  alt='Original Figure 5: full-chip mask-optimization frameworks from Intel, D2S, DAMO, AdaOPC 2.0, and FuILT'
+  caption='Original Figure 5 (PDF page 7): five full-chip strategies illustrating boundary repair, giant compute systems, pattern clustering and reuse, and gradient fusion.'
+/>
+
+### 7.1 Why cannot clips simply be stitched together?
+
+A full chip contains billions of features, and optical effects depend on neighborhood context. Independent tile optimization gives adjacent tiles different contexts, producing discontinuities, stitching errors, and repair cost at domain boundaries.
+
+Full-chip MO is therefore simultaneously:
+
+- a **compute problem:** memory, GPU/CPU parallelism, communication, and I/O;
+- a **physical problem:** optical context, resist effects, and process corners;
+- a **continuity problem:** consistency of neighboring Mask and gradients;
+- a **reuse problem:** reusing solutions for repeated motifs;
+- a **manufacturing problem:** curvilinear complexity, shots, rules, and writer limits.
+
+### 7.2 How do the five frameworks differ?
+
+| Framework | Core idea shown in Figure 5 | Main cost or risk |
+|---|---|---|
+| Early Intel flow | Overlapped tiles and boundary padding, followed by independent optimization and merge | Boundary repair may still be needed |
+| D2S | GPU/CPU cluster organized like one giant processor, avoiding partition-and-stitch where possible | Complex system hardware and integration |
+| DAMO | Neural surrogate with adaptive partitioning and clustering | Surrogate generalization and context preservation |
+| AdaOPC 2.0 | Engine selection by local complexity plus a reusable pattern library | Reliable matching and engine selection are required |
+| FuILT | Hierarchical partition, server-worker pipeline, gradient fusion, and boundary healing | Distributed scheduling and fusion logic |
+
+### 7.3 Read the subfigures one by one
+
+- **Intel:** overlap and padding preserve context before tiles are merged. Parallelism is natural, but boundary results can still disagree.
+- **D2S:** a specialized GPU/CPU organization treats the full layout as one giant task. The survey reports full-chip curvilinear ILT within 24 hours; this is a cited result, not a new measurement in this survey.
+- **DAMO:** a fast surrogate predicts wafer images, while adaptive partitioning and clustering balance speed and context.
+- **AdaOPC 2.0:** complexity and repetition of via patterns guide engine selection, and a pattern library reuses optimized results.
+- **FuILT:** hierarchical partitions are followed by gradient fusion each iteration and multi-level boundary healing so neighboring tiles converge consistently.
+
+**Figure 5's core message:** full-chip is not a clip solver multiplied by the number of tiles. Context, boundaries, communication, repeated patterns, and memory must be explicit. D2S tries to avoid stitching, FuILT makes consistency part of a partitioned algorithm, and AdaOPC 2.0 reduces redundant computation through pattern reuse. These ideas can complement one another.
+
+## 8. Open problems identified by the survey
+
+### 8.1 Conflicting objectives
+
+**[Paper]** Mask optimization must balance pattern fidelity, computational efficiency, mask complexity, and manufacturing robustness. More SRAFs or curvilinear detail may widen the process window while increasing write complexity and time.
+
+An explanatory vector form is:
+
+$$
+\min_M\bigl[
+E_{\mathrm{fidelity}}(M),
+E_{\mathrm{robustness}}(M),
+C_{\mathrm{mask}}(M),
+C_{\mathrm{compute}}(M)
+\bigr].
+$$
+
+This is not the survey's single exact objective. It highlights that a practical optimum is usually a Pareto trade-off, not the minimum of one scalar loss.
+
+### 8.2 Manufacturability should enter the optimization loop
+
+Traditional writers may need many shots for complex curvilinear masks. Multi-beam writers reduce part of the time penalty, but not every equipment and cost constraint disappears. Rule repair after ILT can damage the original optimum.
+
+A more reliable direction is to include mask rules, minimum width/spacing, writer limits, and complexity costs during search rather than repairing them only afterward.
+
+### 8.3 Trust and generalization of learned models
+
+Surrogates and learned optimizers may fail on new patterns, layers, or process conditions, making retraining and recalibration expensive. The survey points toward physics-informed models, model-driven deep learning, transferable foundation models, and uncertainty quantification.
+
+**Research judgment:** AI for engineering should not optimize only fixed-benchmark error; it should remain reliable under pattern, process, and compute changes.
+
+## 9. Is reinforcement learning really appropriate for OPC?
+
+This section is a research extension based on the survey, not a list of the survey's contributions.
+
+### 9.1 First ask what real difficulty RL solves
+
+Classical ILT already uses gradients, level sets, and coarse-to-fine schedules; learned methods can predict masks or initializations. Before introducing RL, ask:
+
+- Are actions inherently discrete and constrained edge movements?
+- Does the reward contain yield or manufacturing metrics that are difficult to differentiate?
+- Do long-term interactions among segments make sequential decisions useful?
+- Can the policy transfer to unseen patterns and processes?
+
+Replacing a differentiable optimizer with an agent without a distinctive problem structure and fair compute budget is not a sufficient argument.
+
+### 9.2 A reward example for experiment design only
+
+The survey confirms only that RL-OPC rewards relate to EPE and process-window improvement; it does not provide an exact formula. A personal baseline might express before/after improvement as:
+
+$$
+r_t=\alpha(EPE_t-EPE_{t+1})
++\beta(PVB_t-PVB_{t+1})
+-\lambda C(a_t).
+$$
+
+Here $C(a_t)$ is action complexity or cost. This illustrates “fidelity improvement + robustness improvement - action cost”; it is not an RL-OPC or CAMO equation. Experiments must also address units, sparse rewards, simulation cost, legal actions, and objective conflicts.
+
+### 9.3 Minimum requirements for a fair comparison
+
+| Variable | Must be fixed or reported |
+|---|---|
+| Baseline | MBOPC, MOSAIC, GLS-ILT, or another method and its tuning |
+| Cost | Wall-clock time, simulation calls, training cost, or iterations |
+| Environment | Optical kernels, resist model, corners, and pattern distribution |
+| Split | Whether train and test patterns are genuinely separated |
+| Metrics | EPE, L2, PVB, mask complexity, and runtime together |
+| Scale | Clip, layer, or full chip; boundary treatment |
+
+## 10. A long-term reading route
+
+### Route A: classical OPC/ILT
+
+**OpenILT → MOSAIC → GLS-ILT → Multi-level ILT → RMO-ILT**
+
+For each paper ask: What is optimized? What is the loss? How are gradients obtained? Are process corners handled? How do runtime and manufacturability change?
+
+### Route B: AI in the optimization loop
+
+**GAN-OPC → Neural-ILT / Neural-ILT 2.0 → DevelSet → L2O-ILT → ILILT**
+
+Distinguish direct prediction, initialization, unrolled optimization, implicit physics layers, and whether conventional iteration is retained or replaced.
+
+### Route C: RL + OPC
+
+**RL-OPC → CAMO**, while checking the actual training mechanism of **A2-ILT**.
+
+Record the MDP, reward, action space, simulation budget, cross-layout generalization, and fair baselines.
+
+### Route D: full chip
+
+**Intel → D2S → DAMO / AdaOPC 2.0 → FuILT**
+
+Focus on partitioning, optical context, stitching, gradient fusion, pattern reuse, and GPU/CPU pipelines.
+
+## 11. Reading checklist
+
+### Basic concepts
+
+- [ ] Why does the Mask not need to equal the Target?
+- [ ] How do rule-based OPC, MBOPC, SRAF, and pixel-based ILT differ?
+- [ ] Why does ILT generate curvilinear masks, and where does the manufacturing cost appear?
+- [ ] What is the difference between nominal condition, process window, and process corners?
+
+### Simulation and optimization
+
+- [ ] What do aerial image and resist/printed pattern each represent?
+- [ ] Why do SOCS and FFT accelerate simulation?
+- [ ] Does a surrogate replace simulation, initialization, or the complete optimizer?
+- [ ] What does each of MOSAIC, GLS-ILT, and Multi-level ILT change?
+- [ ] What do EPE, PVB, L2, and shot count measure?
+
+### RL and full chip
+
+- [ ] What are the original RL-OPC state, action, reward, and training budget?
+- [ ] What do CAMO's graph, recurrent module, and EPE modulator each do?
+- [ ] Why can independently optimal tiles become discontinuous when stitched?
+- [ ] What system problem does each of D2S, AdaOPC 2.0, and FuILT address?
+- [ ] What evidence would show that a clip method generalizes to a real design layer?
+
+## 12. Synthesis: what is the survey really saying?
+
+The challenge in computational lithography is no longer only making one clip print more accurately. It is **reliably completing full-chip mask optimization at a computational and manufacturing cost that can be accepted**. Research therefore follows three complementary paths:
+
+1. Use physics acceleration, GPUs, and learned surrogates to reduce the cost of one simulation.
+2. Use numerical ILT, deep learning, hybrid solvers, and RL to improve Mask search quality and efficiency.
+3. Use partitioning, parallelism, pattern reuse, gradient fusion, and boundary healing to reach real design layers and full chips.
+
+**Most important research judgment:** a credible RL + OPC paper should not merely announce an agent replacing traditional optimization. It should identify the concrete bottleneck, explain the structure RL uniquely exploits, and demonstrate the gain under the same quality target and a reasonable compute budget.
+
+### Boundaries of the survey
+
+- It is a methods-and-systems trend survey, not a complete derivation, hyperparameter, or reward specification for every cited method.
+- The cited studies span multiple years and are not a complete list of the newest work.
+- Their relative strengths are not a unified ranking remeasured on one public benchmark.
+- Robustness of many learned methods on full-chip designs, different layers, and different process corners remains to be established.
+
+### Next actions
+
+- [ ] Pin an OpenILT process configuration and run forward simulation, evaluation, and Mask updates.
+- [ ] Read the original RL-OPC paper and record state/action/reward/training/evaluation details.
+- [ ] Read CAMO and verify the ablation evidence for its GNN, recurrent module, and EPE modulator.
+- [ ] Compare numerical solving, learned initialization, and RL policy under the same environment.
+- [ ] Choose one falsifiable, testable question about multi-objective trade-offs, manufacturability, or generalization.
+
+> **Long-term anchor: simulation determines how far optimization can go, optimization determines Mask quality, and the system framework determines whether the method can reach full-chip scale.**
