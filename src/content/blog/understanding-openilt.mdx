@@ -1,0 +1,677 @@
+---
+title: 'Reading OpenILT: Open-Source ILT, Differentiable Simulation, and GPUs'
+description: 'A paper-grounded OpenILT guide covering mathematical models, modular interfaces, four solvers, experimental results, speedup caveats, simplified gradients, binary evaluation, and a reproduction roadmap.'
+publishDate: '2026-10-09'
+updatedDate: '2026-10-09'
+category: paper-reading
+collection: paper-reading
+researchTopics:
+  - computational-lithography
+paper:
+  title: 'OpenILT: An Open Source Inverse Lithography Technique Framework'
+  authors: ['Su Zheng', 'Bei Yu', 'Martin Wong']
+  year: 2023
+  venue: ASICON
+  url: 'https://doi.org/10.1109/ASICON58565.2023.10396314'
+  doi: '10.1109/ASICON58565.2023.10396314'
+tags:
+  - OpenILT
+  - OPC
+  - ILT
+  - computational lithography
+  - PyTorch
+  - GPU
+  - paper reading
+language: English
+translationKey: understanding-openilt
+draft: false
+---
+
+import Figure from '@/components/article/Figure.astro'
+
+# OpenILT: An Open-Source Inverse Lithography Framework | Detailed Reading Notes
+
+> **Paper:** *OpenILT: An Open Source Inverse Lithography Technique Framework (Invited Paper)*<br />
+> **Authors:** Su Zheng, Bei Yu, Martin Wong, Chinese University of Hong Kong<br />
+> **Publication:** 2023 IEEE 15th International Conference on ASIC (ASICON), invited paper<br />
+> **Source:** [DOI: 10.1109/ASICON58565.2023.10396314](https://doi.org/10.1109/ASICON58565.2023.10396314)<br />
+> **Code:** [OpenOPC/OpenILT](https://github.com/OpenOPC/OpenILT)
+
+These notes use my long-term reading notes as their outline and cross-check them against Sections I–V, Equations (1)–(5), Tables I–II, and Figures 1–3 of the four-page paper. This is a learning record connecting physical intuition, mathematical models, and reproduction practice, rather than a word-for-word translation of the paper.
+
+Four labels distinguish the authors' contributions from my additions: **[Paper]**, **[Interpretation and derivation]**, **[Practical advice]**, and **[To verify]**. Numbered equations and experimental data come from the paper; additional derivations, illustrative code, and checklists are not experiments reported by the authors. I have not run OpenILT or audited its current source line by line for these notes. Actual APIs, configurations, and gradient implementations still require checking against a pinned repository version.
+
+## 0. At a glance: what does this paper do?
+
+**OpenILT primarily contributes a research platform, not a completely new mask optimization algorithm.** It provides reusable simulation, initialization, solving, and evaluation modules for inverse lithography technique (ILT), using PyTorch to support GPU acceleration and learning-based method development.
+
+| Question | OpenILT's answer |
+|---|---|
+| What will a given mask print on the wafer? | Forward simulation combining optical projection and a photoresist model |
+| How can the printed result approach the target? | Iterative optimization of mask parameters by a solver |
+| How can algorithms be compared? | Shared L2, EPE, PVB, and #Shots evaluation |
+| How can repeated implementation work be reduced? | Modular interfaces and reproductions of four existing methods |
+| How can runtime be improved? | FFT convolution, GPU computation, and accelerated backward computation |
+
+The demonstrated solvers are **MOSAIC, LevelSet, MultiLevel, and GAN-OPC**. The authors report **321×** speedup for MOSAIC and **44×** for LevelSet. These results belong to particular comparison settings, not arbitrary hardware or algorithms. In particular, the MOSAIC speedup stated in the text differs from the ratio of average times in the table; see Section 9.
+
+The key bottleneck to remember is that **74.71%** of runtime in the authors' MOSAIC experiment is spent on lithography simulation, and **23.15%** on gradient descent.
+
+**Reading roadmap:**
+
+```text
+Target Zt → Initialize parameters P → Continuous mask M
+                                            ↓
+                                     Optical projection
+                                            ↓
+                                       Aerial image I
+                                            ↓
+                                      Photoresist model
+                                            ↓
+                           Printed Znom / Zmax / Zmin
+                                            ↓
+                              Compare with target: loss L
+                                            ↓
+                           Backpropagate → Update P → Repeat
+                                            ↓
+                           Final binary mask and evaluation
+```
+
+Forward simulation asks what a mask will print; inverse optimization asks how to change the mask to print the target. Understanding these two paths matters more initially than ranking the four solvers.
+
+## 1. Background: how are OPC and ILT related?
+
+### 1.1 Why not use the target directly as the mask?
+
+**[Paper | Section I]** Lithography transfers mask patterns to a wafer. As feature sizes shrink, proximity effects and variations in lithography and mask conditions distort printed patterns, creating a need for pattern fidelity and process robustness.
+
+**[Interpretation and derivation]** Ideal corners, line ends, and closely spaced wires can become rounded, shortened, or mutually influenced by the imaging system. A mask that looks like the target does not necessarily print like the target. OPC modifies the mask in advance to compensate for transfer errors.
+
+| Technique | Main idea | Role |
+|---|---|---|
+| Rule-based OPC | Look-up corrections based on width, spacing, and related rules | Early rule-based methods |
+| Model-based OPC | Adjust the mask using imaging or process models | Model-driven methods |
+| ILT | Treat mask design as the inverse problem of an imaging system | An important optimization route within OPC |
+
+ILT is not a wholly unrelated alternative to OPC: it is one OPC route discussed by the paper. An abstract formulation is:
+
+$$
+M^*=\operatorname*{arg\,min}_{M}
+L\big(\operatorname{Litho}(M),Z_t\big).
+$$
+
+Here $M$ is the mask, $Z_t$ the target wafer pattern, and $\operatorname{Litho}$ the forward simulator. This is an explanatory abstraction, not a numbered paper equation; it also omits practical manufacturing constraints.
+
+### 1.2 What difficulties does the platform address?
+
+**[Paper]** ILT requires many iterations and simulations, is computationally expensive, and is challenging at full-chip scale. GPU and deep-learning methods exist, but a convenient general platform for development, evaluation, and comparison is missing.
+
+OpenILT seeks to reduce infrastructure-building costs and provides an interface to PyTorch. The four-page paper does not demonstrate that full-chip problems are completely solved, nor that the platform is a complete industrial sign-off tool.
+
+## 2. Notation: distinguish parameters and image representations
+
+| Symbol | Meaning |
+|---|---|
+| $Z_t$ | Prespecified target pattern |
+| $P$ | Parameters optimized by the solver; unconstrained real values in the basic pixel formulation |
+| $M$ | Mask image obtained by transforming parameters |
+| $I$ | Aerial image after optical projection: an intensity distribution |
+| $Z$ | Continuous printed output of the photoresist model |
+| $Z_{nom},Z_{max},Z_{min}$ | Printed outputs at nominal, maximum, and minimum process corners |
+| $h_k,w_k$ | Optical kernel $k$ and its weight |
+| $N_h$ | Number of kernels: 24 in the paper's implementation |
+| $\theta_M,\theta_Z$ | Steepness parameters of the two sigmoid functions |
+| $I_{th}$ | Intensity threshold of the photoresist model |
+| $\otimes,\odot$ | Convolution and pointwise multiplication |
+
+**Memory anchor:** The optimizer changes $P$; the simulator receives $M$; optical projection produces $I$; the photoresist model produces $Z$; and the loss compares against $Z_t$. These are not interchangeable instances of an input image.
+
+## 3. Differentiable masks: why optimize $P$ first?
+
+### 3.1 Equation (1): from parameters to a mask
+
+**[Paper | Section II-A]**
+
+$$
+M(x,y)=\sigma_M(P(x,y))
+=\frac{1}{1+\exp[-\theta_M P(x,y)]}.
+\tag{1}
+$$
+
+This restricts mask values to $[0,1]$. Strictly, finite real inputs produce values in $(0,1)$; 0 and 1 are limiting values.
+
+**[Interpretation and derivation]** Directly optimizing $M\in\{0,1\}$ is a discrete problem, and hard thresholds do not support ordinary gradient propagation. Continuous parameterization first provides a smooth optimization space, with binary patterns handled in final evaluation. It does not guarantee that the resulting shapes satisfy every mask manufacturing rule.
+
+Equation (1) gives:
+
+$$
+\frac{\partial M}{\partial P}=\theta_M M(1-M).
+$$
+
+For $\theta_M=1$, $P=-2,0,2$ gives $M\approx0.119,0.500,0.881$. This is a teaching example, not a paper experiment.
+
+When $M$ approaches 0 or 1, the derivative approaches zero. An excessively steep sigmoid can push many pixels into saturation. Approaching hard binarization does not automatically make optimization easier; initialization, scale, and the optimizer must be considered together.
+
+### 3.2 Continuous optimization versus final binary evaluation
+
+**[Paper]** After Equation (3), the authors require both $M$ and $Z$ to be binarized at **0.5** after optimization and before evaluation. The text does not specify `>` versus `>=` for values exactly at the threshold.
+
+**[Practical advice]** Distinguish two processes:
+
+1. Build a differentiable loss using continuous $M$ and $Z$ during optimization.
+2. Binarize the final $M$, simulate that binary mask again, binarize the resulting $Z$ at each corner, and calculate reported metrics.
+
+The second process ensures that the evaluated object is the final output mask; the evaluator implementation must still be checked. In general:
+
+$$
+\operatorname{Litho}(\operatorname{Bin}(M))
+\ne\operatorname{Litho}(M).
+$$
+
+Merely binarizing the printed image already generated from a continuous mask cannot be assumed equivalent to evaluating the final binary mask. Record the quality change before and after mask binarization explicitly.
+
+## 4. Forward simulation: from mask to printed image
+
+<Figure
+  src='/images/openilt-paper/figure-1-ilt-flow.png'
+  alt='Paper Figure 1: parameters become a mask, optical projection and photoresist modeling produce a printed image, and backpropagation updates parameters'
+  caption='Original Figure 1 (PDF page 2): typical ILT flow. Source: Zheng, Yu, and Wong, OpenILT, ASICON 2023; reproduced for discussion of the paper.'
+/>
+
+### 4.1 Equation (2): optical projection $M\rightarrow I$
+
+**[Paper]** The authors approximate projection behavior with the Hopkins diffraction model:
+
+$$
+I(x,y)=\sum_{k=1}^{N_h}w_k
+\left|M(x,y)\otimes h_k(x,y)\right|^2.
+\tag{2}
+$$
+
+The implementation uses $N_h=24$, and the lithography model comes from the ICCAD-2013 mask optimization contest.
+
+**[Interpretation and derivation]** Let $A_k=M\otimes h_k$. Each kernel produces a field response; its squared magnitude $|A_k|^2$ is computed before weighted summation into intensity. Field responses can be complex, so magnitude squared must not be casually treated as an ordinary real square.
+
+In particular:
+
+$$
+\sum_k w_k|A_k|^2
+\ne\left|\sum_k w_k A_k\right|^2
+$$
+
+in general. The right-hand side introduces cross terms between responses. Convolution linearity alone does not allow all intensity-model kernels to be replaced by one combined kernel.
+
+### 4.2 Equation (5): convolution using FFT
+
+**[Paper | Section III-B]** For large images such as $2048\times2048$, convolution can be written as:
+
+$$
+h_k\otimes M=
+\operatorname{IFFT}\left[
+\operatorname{FFT}(h_k)\odot\operatorname{FFT}(M)
+\right].
+\tag{5}
+$$
+
+The paper's computational comparison assigns $O(N^4)$ to direct convolution of two large $N\times N$ matrices, versus approximately $O(N^2\log N)$ for FFT/IFFT.
+
+**[Interpretation and derivation]** This is not the universal complexity of every 2D convolution. With a fixed spatial kernel of $K\times K$, direct computation typically costs $O(N^2K^2)$. Kernel count, batching, process corners, memory, and FFT constant overhead also matter.
+
+FFT changes the numerical computation, not the physical model introduced here. However, multiplication in a discrete FFT domain corresponds to circular convolution. Linear convolution requires compatible zero-padding, cropping, and kernel-origin conventions. Check:
+
+- Whether kernels are already stored in the frequency domain;
+- Frequency ordering conventions, including operations such as `fftshift`;
+- FFT size, normalization, and boundary conditions;
+- Image coordinates, kernel centers, and final cropping.
+
+Equation (5) does not mean that multiplying the FFTs of arbitrary, unaligned arrays necessarily produces a correct lithography image.
+
+### 4.3 Equation (3): the photoresist model $I\rightarrow Z$
+
+**[Paper]**
+
+$$
+Z(x,y)=\sigma_Z(I(x,y))
+=\frac{1}{1+\exp\{-\theta_Z[I(x,y)-I_{th}]\}}.
+\tag{3}
+$$
+
+For positive $\theta_Z$, intensities above $I_{th}$ lead toward 1, and those below it toward 0. This is a smooth approximation of printed patterns, not a detailed chemical kinetics model of photoresist.
+
+**[Interpretation and derivation]**
+
+$$
+\frac{\partial Z}{\partial I}=\theta_Z Z(1-Z).
+$$
+
+This allows the loss to propagate back into optical projection. For finite inputs and $\theta_Z>0$, $Z\ge0.5$ is equivalent to $I\ge I_{th}$; continuous $Z$ is nevertheless not an already-binarized pattern.
+
+### 4.4 What are the three process corners?
+
+The paper's interface is:
+
+```python
+Znom, Zmax, Zmin = litho(M)
+```
+
+These are printed outputs at nominal, maximum, and minimum process corners. Here `max/min` refers to **different process conditions**, not pixelwise extrema of the nominal image. Nor should these outputs be assumed to form a strict envelope of every possible process variation without checking the implementation.
+
+**[To verify]** The four-page paper does not list every parameter for each corner. The kernels, exposure settings, and other conditions require reading the configuration and implementation of a pinned version.
+
+## 5. Inverse optimization: how does the loss change the mask?
+
+### 5.1 Equation (4): a three-corner cost function
+
+**[Paper | Section II-C]** The authors give a commonly used cost function:
+
+$$
+\begin{aligned}
+L(Z_t,Z_{nom},Z_{max},Z_{min})
+={}&\|Z_{nom}-Z_t\|_2^2\\
+&+\|Z_{max}-Z_t\|_2^2\\
+&+\|Z_{min}-Z_t\|_2^2.
+\end{aligned}
+\tag{4}
+$$
+
+The MOSAIC and LevelSet examples use this objective. Its three errors encourage agreement with the target at different corners, rather than only at nominal conditions.
+
+**Do not claim** that Equation (4) directly includes all four evaluation metrics—L2, EPE, PVB, and #Shots. It contains no EPE or shot-count term, and no explicit $\|Z_{max}-Z_{min}\|_2^2$ term.
+
+### 5.2 Why can a multi-corner objective improve robustness?
+
+**[Interpretation and derivation | Not a numbered paper equation]** In the same tensor space, let $a=Z_{max}-Z_t$ and $b=Z_{min}-Z_t$. Then:
+
+$$
+\|Z_{max}-Z_{min}\|_2^2
+=\|a-b\|_2^2
+\le2\|a\|_2^2+2\|b\|_2^2.
+$$
+
+Bringing both corners close to the same target controls an upper bound on their difference. This does not mean that each gradient update decreases PVB monotonically, or that a bound on continuous training outputs can be applied without qualification to binary evaluation outputs.
+
+Small PVB alone is insufficient: if both corners print the same incorrect image, PVB can still be zero. Fidelity and process robustness must be evaluated together.
+
+### 5.3 How does the gradient return to $P$?
+
+The computation chain is:
+
+$$
+P\rightarrow M\rightarrow I_c\rightarrow Z_c\rightarrow L,
+\qquad c\in\{nom,max,min\}.
+$$
+
+A Jacobian form of the chain rule is:
+
+$$
+\nabla_P L
+=\sum_c J_{M,P}^{\mathsf T}
+J_{I_c,M}^{\mathsf T}
+J_{Z_c,I_c}^{\mathsf T}\nabla_{Z_c}L.
+$$
+
+$J_{A,B}$ is the Jacobian of flattened image $A$ with respect to flattened $B$. Automatic differentiation computes vector–Jacobian products rather than explicitly constructing these enormous matrices. For Equation (4), $\nabla_{Z_c}L=2(Z_c-Z_t)$.
+
+Simple gradient descent can be summarized as:
+
+$$
+P^{(t+1)}=P^{(t)}-\eta\nabla_P L.
+$$
+
+The paper mentions PyTorch SGD and Adam. This derivation describes the ideal computation graph; the actual `exact/simple` backward implementations still need checking and cannot automatically be treated as the same exact gradient.
+
+### 5.4 An illustrative optimization loop
+
+**[Practical advice]** This illustrates continuous optimization assuming a compatible simulator, target, parameters, and configuration already exist. It is not a verified OpenILT script or a LevelSet update implementation.
+
+```python
+P = initial_params.detach().clone().requires_grad_(True)
+optimizer = torch.optim.Adam([P], lr=learning_rate)
+
+for step in range(num_steps):
+    optimizer.zero_grad()
+    M = torch.sigmoid(theta_mask * P)
+    Znom, Zmax, Zmin = litho(M)
+    loss = sum(((Z - target) ** 2).sum()
+               for Z in (Znom, Zmax, Zmin))
+    loss.backward()
+    optimizer.step()
+```
+
+The `sum()` reduction matches the squared norm. Changing it to `mean()` changes the loss and gradient scales, so the learning rate must be considered too. Final binarization and resimulation belong to a separate evaluation step; do not casually insert a nondifferentiable hard threshold into this loop.
+
+## 6. What do the four metrics measure?
+
+**[Paper | Sections II-B and III-E]**
+
+| Metric | Paper definition | Meaning |
+|---|---|---|
+| Square L2 Error | $\|Z_{nom}-Z_t\|_2^2$ | Overall pattern discrepancy at nominal conditions |
+| EPE | Number of target-contour samples with edge distance exceeding $th_{EPE}$ | Edge placement quality |
+| PVB | $\|Z_{max}-Z_{min}\|_2^2$ | Printed variation across process corners |
+| #Shots | Number of rectangles needed to construct the mask | Mask geometry or writing complexity |
+
+### 6.1 L2 units and the binary interpretation
+
+**[Interpretation and derivation]** With binary target and printed images, each mismatching pixel contributes 1. Squared L2 therefore counts mismatching pixels; multiplying by the physical area per pixel gives an area-error interpretation.
+
+The experimental tables label L2/PVB in **nm²**, which these notes retain when quoting data. A sum over dimensionless arrays in code does not automatically acquire nm² units. Changing pixel pitch requires an explicit area conversion; raw pixel errors are not directly comparable across resolutions.
+
+For binary $Z_{max},Z_{min}$, PVB similarly counts differing pixels and represents the symmetric difference between patterns. Interpreting it as a simple band between two contours additionally requires conditions such as one pattern containing the other.
+
+### 6.2 EPE is not just a distance value
+
+The reported EPE is a **violation count**, not a mean distance or maximum edge displacement. Sampling, the threshold, and coordinate scale affect it. Two patterns with the same L2 can have very different EPE at critical edges.
+
+### 6.3 #Shots and manufacturability
+
+Fewer rectangles can indicate lower mask complexity, but the count also depends on rectangle decomposition or fracture strategy. #Shots alone cannot replace minimum-width, minimum-spacing, or other manufacturing checks.
+
+The paper provides this evaluation interface:
+
+```python
+l2, pvb, epe, shot = evaluate(M, Zt, litho)
+```
+
+`Basic` computes L2/PVB, `EPEChecker` estimates EPE, and `ShotCounter` estimates #Shots. Tables I–II do not report #Shots, so they do not establish reduced shot counts for the reproduced methods.
+
+## 7. Software architecture: how do the four modules cooperate?
+
+### 7.1 Module interfaces
+
+| Module | Task | Paper interface or description |
+|---|---|---|
+| Lithography Simulation | Optical projection and photoresist simulation | `LithoSim`, inheriting PyTorch `Module` |
+| Initialization | Target image and initial parameters from target geometry | `Initializer`, `PixelInit` |
+| Solver | Simulation, loss, backpropagation, and updates | Can use PyTorch optimizers |
+| Evaluation | Metrics for the final mask | `Basic`, `EPEChecker`, `ShotCounter` |
+
+Modularity allows one component to change while others remain reusable. New initialization or optimization strategies need not rebuild the simulator. A shared platform does not automatically guarantee fair comparison: parameters, losses, gradient modes, and evaluation conventions still need alignment.
+
+### 7.2 `exact` and `simple`: same forward pass, different backward passes
+
+**[Paper | Section III-B]** Both `LithoSim` versions share the forward process but differ in backward computation. `exact` computes gradients according to the Hopkins model; `simple` uses the kernel-combination speedup from MOSAIC [11].
+
+The paper gives the linearity property:
+
+$$
+\sum_k w_k(M\otimes h_k)
+=M\otimes\sum_k(w_k h_k).
+$$
+
+This is an identity for linear convolution terms, not an equivalent replacement of the squared-magnitude intensity sum in Equation (2). It alone neither proves identical gradients for every input nor describes `simple` as a separate, less accurate forward model.
+
+**[To verify]** The simplified backward expression, error, and applicability require source code and reference [11]. For gradient checking, pin a small image, dtype, kernels, and loss, then use finite differences to check `exact`. Measure discrepancies for `simple` rather than presuming it must pass the same exact-gradient check.
+
+### 7.3 Initialization and the LevelSet sign convention
+
+**[Paper | Section III-C]** Pixel parameters can be initialized as:
+
+$$
+P=Z_t\qquad\text{or}\qquad P=2Z_t-1.
+$$
+
+```python
+init = Initializer()
+Zt, P = init.run(design, X, Y, dX, dY)
+```
+
+`design` contains rectilinear polygons; `X,Y` are image dimensions; `dX,dY` specify offsets between geometric coordinates and image positions. Initializing $P$ does not imply $M=P$; a corresponding transformation is still required.
+
+LevelSet initializes using distance to the nearest target edge or corner. The paper specifies **negative values inside and positive values outside**. Do not blindly insert this convention into the positive-slope sigmoid of Equation (1): if foreground interiors should be 1, negative interior parameters would instead produce values below 0.5. Check the LevelSet parameter-to-mask transformation, foreground polarity, and update rules together.
+
+### 7.4 The paper's seven-line example
+
+```python
+cfg = SimpleCfg()
+litho = LithoSim()
+solver = SimpleILT(cfg, litho)
+design = Design("M1_test1.glp")
+Zt, P = PixelInit().run(design)
+l2, pvb, P, M = solver.solve(Zt, P)
+l2, pvb, epe, shot = evaluate(M, Zt, litho)
+```
+
+These lines load configuration, build the simulator and MOSAIC solver, read a design, initialize, optimize, and evaluate. They illustrate interface simplicity, omit imports and environment preparation, and are not guaranteed to run unchanged against every current repository version.
+
+## 8. Four solvers, not four new algorithmic contributions
+
+**[Paper | Sections III-D and III-F]**
+
+| Method | Route and role | Example Python lines |
+|---|---|---:|
+| MOSAIC [11] | Traditional ILT; Equation (4) | 64 |
+| LevelSet [12] | Traditional ILT; distance initialization and Equation (4) | 93 |
+| MultiLevel [22] | Average pooling and multiresolution ILT built on MOSAIC | 102 |
+| GAN-OPC [14] | A GAN supplies a better initial mask for subsequent ILT | 241 |
+
+Line counts describe the authors' example implementations, not the total platform, simulation, evaluation, or dependency code. The authors try to use similar iteration counts, learning rates, and network architectures for reproduction; this does not establish identical implementations and experimental conditions in every detail.
+
+GAN-OPC demonstrates support for AI-driven ILT. It is not a newly proposed GAN architecture in OpenILT, and does not mean that a neural network completely replaces physical simulation and subsequent optimization.
+
+## 9. Checking experiments: quality, speed, and comparison limits
+
+### 9.1 What are the experiments validating?
+
+**[Paper | Section IV-A]** On `case1`–`case10`, the authors compare platform reproductions with results reported in the corresponding original papers. The purpose is primarily to show convenient, efficient implementation of existing methods with comparable results—not universal superiority of a new solver over all baselines.
+
+### 9.2 Average rows from Tables I–II
+
+These numbers follow the paper's average rows. L2/PVB retain the table unit **nm²**, EPE is a violation count, and time is in seconds. `—` means not provided.
+
+| Method | EPE ↓ | L2 ↓ | PVB ↓ | Time/s ↓ |
+|---|---:|---:|---:|---:|
+| Original MOSAIC [11] | 9.1 | 44012 | 50899 | 289 |
+| Our MOSAIC | 6.6 | 35860 | 48080 | 0.94 |
+| Original LevelSet [12] | 3.7 | 38615 | 50309 | 100 |
+| Our LevelSet | 5.4 | 34712 | 50113 | 2.29 |
+| Original GAN-OPC [14] | — | 39501 | 48918 | — |
+| Our GAN-OPC | 8.3 | 38239 | 45043 | 1.13 |
+| Original MultiLevel [22] | 2.5 | 28362 | 40044 | 1.27 |
+| Our MultiLevel | 2.5 | 27893 | 41372 | 1.03 |
+
+Average L2 is not the whole story: Our LevelSet's average EPE changes from **3.7** to **5.4**, while Our MultiLevel's PVB changes from **40044** to **41372**. All metrics do not improve simultaneously.
+
+Averages can also hide difficult cases. In Table I, Our MOSAIC has EPE **47** on `case3`, much higher than its **6.6** average. Failure analysis should inspect per-case distributions rather than just average rows.
+
+Original GAN-OPC has no EPE or timing data in Table II, so that table cannot establish an EPE improvement or speedup relative to its original implementation.
+
+### 9.3 The stated 321× differs from the average-time ratio
+
+**[Paper]** The text reports MOSAIC **321×** and LevelSet **44×** speedups.
+
+**[Data check]** Dividing the average times in Table I gives:
+
+$$
+\frac{289}{0.94}\approx307.45,\qquad
+\frac{100}{2.29}\approx43.67.
+$$
+
+The LevelSet ratio agrees with approximately 44×, but MOSAIC's 321× **does not follow directly from these two averages**. Ordinary rounding at the printed precision of `289` and `0.94` gives a ratio of roughly 305–310×, which still does not explain 321×.
+
+The careful citation is therefore: **the authors report 321× in the text; the ratio of tabulated average times is approximately 307×, and the speedup calculation convention is not specified**. Do not assert that rounding explains the discrepancy, or silently replace the text's number with another supposedly definitive conclusion.
+
+### 9.4 What limits the interpretation of these speedups?
+
+The comparison uses original reports from different publications and the authors' reproductions. The text does not fully specify GPU models, software versions, all hyperparameters, or timing scope sufficiently to reconstruct the environment independently. Original LevelSet [12] is already a GPU method, so its 44× cannot simply be described as the benefit of moving from CPU to GPU.
+
+These experiments support fast execution under the reported settings, but not attribution of every runtime difference to a single factor or a promise of 321× on arbitrary machines.
+
+### 9.5 Figure 2: example pattern appearances
+
+<Figure
+  src='/images/openilt-paper/figure-2-pattern-examples.png'
+  alt='Paper Figure 2: the target, reproduced LevelSet result, and reproduced MultiLevel result shown side by side'
+  caption='Original Figure 2 (PDF page 4): (a) target, (b) Our LevelSet, (c) Our MultiLevel. Source: Zheng, Yu, and Wong, ASICON 2023. Appearance examples alone do not determine all quality metrics.'
+/>
+
+Figure 2 connects targets and optimized results visually. It does not establish superiority on all cases, and visualization details not specified by the original figure should not be invented as a precise evaluation procedure.
+
+### 9.6 Figure 3: runtime breakdown
+
+<Figure
+  src='/images/openilt-paper/figure-3-runtime-analysis.png'
+  alt='Paper Figure 3: MOSAIC runtime with 74.71% in simulation, 23.15% in gradient descent, and smaller shares in other stages'
+  caption='Original Figure 3 (PDF page 4): runtime analysis of the authors’ MOSAIC. Source: Zheng, Yu, and Wong, ASICON 2023. These proportions are not universal across ILT methods.'
+/>
+
+| Stage | Share |
+|---|---:|
+| Mask Generation | 0.92% |
+| Lithography Simulation | 74.71% |
+| Cost Function | 1.22% |
+| Gradient Descent | 23.15% |
+
+The authors associate simulation cost mainly with FFT/IFFT and identify further simulation acceleration as promising for ILT. These timing categories should not be assumed to represent strictly separated forward and backward operator costs without checking the measurement implementation.
+
+**[Interpretation and derivation]** If only the simulation portion occupying 74.71% is accelerated while everything else stays unchanged, Amdahl's law gives the ideal overall speedup:
+
+$$
+S(s)=\frac{1}{(1-0.7471)+0.7471/s}.
+$$
+
+Even reducing that portion to zero time would yield an overall limit of about **3.95×**. This is a teaching calculation based on Figure 3, not an author-measured result. A 10× speedup for one simulation does not automatically mean a 10× speedup for the whole solver.
+
+## 10. Contributions, boundaries, and research ideas
+
+### 10.1 The actual value
+
+1. **Platform:** Reusable modules for simulation, initialization, solving, and evaluation.
+2. **Computation:** FFT, GPU, and PyTorch integration reducing repeated simulation cost.
+3. **Reproduction:** Four existing methods on one platform, demonstrating concise interfaces.
+4. **Research infrastructure:** Shared foundations for conventional optimization and learning-assisted methods.
+
+### 10.2 What does the paper not prove?
+
+- No new ILT solver uniformly outperforming every method;
+- No proof that all full-chip engineering limits are resolved;
+- No improvement in every quality metric;
+- No universal equivalence of `simple` and exact gradients;
+- No complete, independently executable experimental environment specification;
+- No reinforcement-learning states, actions, rewards, or policy-training mechanism.
+
+### 10.3 Future questions, not established results
+
+**[Practical advice]** Possible experiments include:
+
+- Further acceleration of FFT, kernel computation, and shared work across corners;
+- Learned lithography surrogates that preserve both forward accuracy and useful optimization gradients;
+- Learned initialization that reduces total iterations and runtime, not merely improves initial appearance;
+- Generalization across designs, resolutions, and process configurations;
+- Incorporating minimum widths, spacing, or shot complexity into optimization and verification.
+
+Before exploring RL + OPC, explain why existing continuous gradient optimization is insufficient and what discrete actions or constraint structure actually add. Using PyTorch alone does not make a platform a reinforcement-learning framework.
+
+## 11. Nine self-check questions before reading code
+
+1. **Is the input to `litho()` the target?** No: it is mask $M$. Target $Z_t$ is used for initialization, loss, and evaluation.
+2. **Why have both $P$ and $M$?** Parameter representation differs from simulator input; they are not interchangeable.
+3. **How do $I$ and $Z$ differ?** Intensity versus printed output after photoresist mapping.
+4. **Why three $Z$ outputs?** Different process corners, not pixelwise extrema.
+5. **When does binarization occur?** After continuous optimization and before final evaluation; check resimulation of the final binary mask.
+6. **Does small PVB mean correct printing?** Not necessarily: both corners may miss the target together.
+7. **Does FFT change the physical model?** Here it changes computation, but discrete boundaries and alignment still affect results.
+8. **Are `simple/exact` different forward models?** The paper says the forward pass is shared and the backward passes differ.
+9. **Can negative LevelSet interiors be passed directly through an ordinary sigmoid?** Do not assume so; check polarity, transformation, and update conventions.
+
+## 12. Reproduction roadmap: forward intuition before solver research
+
+> **[Practical advice | Not yet executed]** This checklist is a future learning plan, not a set of reproduction experiments completed for these notes.
+
+### Stage A: run forward simulation
+
+- [ ] Pin the OpenILT commit, Python/PyTorch/CUDA versions, and device.
+- [ ] Record kernel files, kernel count, photoresist parameters, and process corners.
+- [ ] Specify image size, pixel pitch, coordinate offsets, foreground polarity, and boundaries.
+- [ ] Run `LithoSim` with repository examples and check tensor shapes, dtypes, and ranges.
+- [ ] Save $M$, $I$, continuous $Z$, and binary $Z$; add controlled diagnostics if the API does not expose $I$.
+- [ ] Visualize all three corners and overlay their contours on the target.
+- [ ] Change only one of line width, line-end length, or spacing at a time.
+- [ ] Time simulation after warm-up; use appropriate synchronization or CUDA events on GPU.
+
+**Acceptance:** Explain $M\rightarrow I\rightarrow Z$ and provide visualizations with scale, threshold, and coordinate information—not just images that look different.
+
+### Stage B: complete a MOSAIC baseline
+
+- [ ] Record initial $P$ and the resulting $M$.
+- [ ] Check the actual loss against Equation (4), including additional terms and weights.
+- [ ] Record optimizer, learning rate, iterations, gradient mode, and stopping conditions.
+- [ ] Save masks, printed outputs, and loss curves at fixed intervals.
+- [ ] Resimulate the final binary mask and calculate L2, EPE, PVB, and #Shots consistently.
+- [ ] Distinguish continuous training loss, final metrics, and binarization effects.
+- [ ] Compare before and after optimization and document failure cases.
+
+**Acceptance:** Produce an optimized mask from a target layout and quantify the change with identical settings. A decreasing loss does not automatically mean every final metric improves.
+
+### Stage C: perform interpretable ablations
+
+| Variable | Observe | Purpose |
+|---|---|---|
+| Initialization with $Z_t$ versus $2Z_t-1$ | Initial mask, convergence curves, final metrics | Parameter scale and initialization effects |
+| `exact` versus `simple` | Forward agreement, gradient discrepancy, time, convergence | Cost of backward acceleration |
+| Single-corner versus multi-corner objectives | Nominal fidelity, PVB, other-corner performance | Robustness trade-offs |
+| Continuous versus binary final masks | Quality after resimulation | Gap between continuous relaxation and discrete output |
+| Different shapes, spacings, and scales | EPE distributions and failure locations | Physical intuition and generalization evidence |
+
+First confirm that the current configuration can control these variables reliably. Use the same evaluator for quality comparisons, and specify whether performance measurements include initialization, transfers, evaluation, and GAN initialization overhead.
+
+### Copyable experiment log
+
+```text
+Experiment ID / date:
+OpenILT commit:
+Python / PyTorch / CUDA:
+Hardware / device:
+Design / benchmark:
+Image shape / pixel pitch / units:
+Coordinates / polarity / boundary convention:
+Optical kernels / lithography config:
+Process corner settings:
+Initialization / parameter-to-mask transform:
+Loss terms / reduction / weights:
+Solver / optimizer / learning rate / iterations:
+Gradient mode (exact or simple):
+Binarization rule / resimulation:
+EPE sampling and threshold / shot counting method:
+Nominal L2 / EPE / PVB / #Shots:
+Warm-up / synchronization / timing scope:
+Observations / failure cases:
+```
+
+## 13. Five core equation cards
+
+Review in conceptual order rather than by where Equation (5) appears in the paper:
+
+1. **Parameters to mask:** $M=\sigma_M(P)$, Equation (1).
+2. **Optical projection:** $I=\sum_k w_k|M\otimes h_k|^2$, Equation (2).
+3. **Photoresist output:** $Z=\sigma_Z(I)=1/(1+e^{-\theta_Z(I-I_{th})})$, Equation (3).
+4. **Three-corner objective:** $L=\sum_{c\in\{nom,max,min\}}\|Z_c-Z_t\|_2^2$, Equation (4).
+5. **FFT convolution:** $h_k\otimes M=\operatorname{IFFT}(\operatorname{FFT}(h_k)\odot\operatorname{FFT}(M))$, Equation (5), with compatible discrete boundary conventions.
+
+**Memory sequence:** Start with $P$, transform it into $M$, project $M$ into $I$, map $I$ through photoresist into $Z$, compare $Z$ with $Z_t$ to obtain $L$, and propagate the gradient back to $P$.
+
+## 14. Related reading and formal citation
+
+Numbers follow the OpenILT bibliography for continued lookup:
+
+- **[11]** J.-R. Gao, X. Xu, B. Yu, D. Z. Pan. *MOSAIC: Mask optimizing solution with process window aware inverse correction.* DAC, 2014. A key source for conventional optimization and simplified backward computation.
+- **[12]** Z. Yu, G. Chen, Y. Ma, B. Yu. *A gpu-enabled level set method for mask optimization.* DATE, 2021, pp. 1835–1838. The LevelSet comparison source.
+- **[14]** H. Yang, S. Li, Y. Ma, B. Yu, E. F. Young. *GAN-OPC: Mask optimization with lithography-guided generative adversarial nets.* DAC, 2018. Learning-assisted initialization.
+- **[21]** H. H. Hopkins. *The concept of partial coherence in optics.* Proceedings of the Royal Society of London, Series A, 1951, 208(1093):263–277. Optical modeling background.
+- **[22]** S. Sun, F. Yang, B. Yu, L. Shang, X. Zeng. *Efficient ILT via multi-level lithography simulation.* DAC, 2023. Multiresolution ILT.
+- **[23]** S. Banerjee, Z. Li, S. R. Nassif. *ICCAD-2013 CAD contest in mask optimization and benchmark suite.* ICCAD, 2013, pp. 271–274. Simulation and benchmark background.
+
+**Formal citation of the paper:**
+
+> Su Zheng, Bei Yu, Martin Wong. “OpenILT: An Open Source Inverse Lithography Technique Framework (Invited Paper).” 2023 IEEE 15th International Conference on ASIC (ASICON), 2023. DOI: 10.1109/ASICON58565.2023.10396314.
+
+Figures 1–3 are reproduced only for discussion and interpretation of the corresponding content. Copyright remains with the rights holders; the project does not redistribute the entire PDF.
+
+## 15. Synthesis and update status
+
+OpenILT's significance is primarily **research infrastructure**: it moves effort away from repeatedly building simulators and evaluators toward initialization, optimization, acceleration, and learning methods. The four solvers demonstrate platform coverage, while runtime analysis identifies lithography simulation as a key bottleneck.
+
+- **2026-10-09:** Prepared the publishable notes from the original long-term notes and four-page paper; checked equations, interfaces, average experimental rows, and three figures; clarified speedup conventions, FFT boundaries, binary evaluation, and LevelSet signs.
+- **Next:** Pin a source version, complete forward simulation first, and then add real environments, configurations, gradient checks, and experiment curves. Algorithm reproduction is not claimed to be complete.
+
+> **Long-term memory anchor: OpenILT addresses the platform problem of research and reproduction; ILT addresses the optimization problem of recovering a mask from a target; forward lithography simulation is the foundation of both.**
